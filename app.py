@@ -4,6 +4,7 @@ import base64
 import html
 import io
 import json
+import os
 import sys
 from datetime import datetime
 from functools import lru_cache
@@ -34,6 +35,18 @@ except ImportError:  # older backend without the connection test
     check_connection = None
 
 API_KEY_MISSING = not GEMINI_API_KEY
+
+# Public hosting: keep each visitor's profile in their own session, never in a shared file.
+PUBLIC_MODE = os.getenv("NI_PUBLIC_MODE", "").strip().lower() in ("1", "true", "yes")
+
+
+def active_api_key():
+    """The key the visitor pasted in, or None to use the server's own key."""
+    return (st.session_state.get("user_api_key") or "").strip() or None
+
+
+def photo_analysis_ready():
+    return bool(active_api_key()) or not API_KEY_MISSING
 
 PROFILE_FILE = ROOT / "user_profile.json"
 
@@ -115,6 +128,9 @@ esc = html.escape
 
 def load_user_profile():
     """Load the saved user profile, if one exists."""
+    if PUBLIC_MODE:
+        data = st.session_state.get("session_profile")
+        return data if isinstance(data, dict) else None
     if not PROFILE_FILE.exists():
         return None
 
@@ -129,6 +145,9 @@ def load_user_profile():
 
 def save_user_profile(profile):
     """Save the user profile locally as JSON."""
+    if PUBLIC_MODE:
+        st.session_state["session_profile"] = dict(profile)
+        return
     with PROFILE_FILE.open("w", encoding="utf-8") as file:
         json.dump(profile, file, indent=4)
 
@@ -241,7 +260,10 @@ def clear_review_state():
 def reset_profile():
     """Delete the saved profile and send the user back to first-time setup."""
     try:
-        PROFILE_FILE.unlink(missing_ok=True)
+        if PUBLIC_MODE:
+            st.session_state.pop("session_profile", None)
+        else:
+            PROFILE_FILE.unlink(missing_ok=True)
     except OSError as exc:
         st.error(f"Could not delete the profile: {exc}")
         return
@@ -706,7 +728,7 @@ inject_css(dark=bool(st.session_state["dark_mode_toggle"]))
 # --------------------------------------------------
 
 with st.sidebar:
-    html_block('<div class="brand">🥗 Nutrition Intelligence</div>')
+    html_block('<div class="brand">Nutrition Intelligence</div>')
     st.toggle("Dark mode", key="dark_mode_toggle", on_change=save_theme_choice)
     html_block(
         '<div class="profile">'
@@ -797,23 +819,32 @@ with st.sidebar:
         if st.button("Delete profile and start over"):
             reset_profile()
 
-    with st.expander("Photo analysis connection", expanded=API_KEY_MISSING):
+    with st.expander("Photo analysis connection", expanded=not photo_analysis_ready()):
         if API_KEY_MISSING:
-            st.warning("No Gemini API key was found.")
             st.markdown(
-                "1. Create a key at [Google AI Studio](https://aistudio.google.com/apikey).\n"
-                "2. In your project folder (next to `app.py`), create a file named "
-                "`.env` containing `GEMINI_API_KEY=your_key`.\n"
-                "3. Restart the app."
+                "Photo analysis needs a free Google Gemini key.\n\n"
+                "1. Open [Google AI Studio](https://aistudio.google.com/apikey) and sign in.\n"
+                "2. Select **Create API key** and copy it.\n"
+                "3. Paste it below."
             )
-            st.caption("On Windows, make sure the file isn't named .env.txt.")
         else:
-            st.caption(f"Key found. Model: {GEMINI_MODEL}")
+            st.caption("Photo analysis is ready. You can also use your own key.")
+        st.text_input(
+            "Your Gemini API key",
+            type="password",
+            key="user_api_key",
+            placeholder="Paste your key here",
+        )
+        st.caption(
+            "Your key is kept only while this session is open and is never saved. "
+            "Your meal photo is sent to Google Gemini for analysis."
+        )
+        if photo_analysis_ready():
             if check_connection is None:
                 st.caption("Update the backend files to enable the connection test.")
             elif st.button("Test connection"):
                 with st.spinner("Contacting Gemini..."):
-                    connected, message = check_connection()
+                    connected, message = check_connection(active_api_key())
                 (st.success if connected else st.error)(message)
 
     targets_disclaimer()
@@ -871,7 +902,7 @@ with col_upload:
         if st.button("Add a food manually"):
             st.session_state["show_manual"] = True
 
-    if API_KEY_MISSING:
+    if not photo_analysis_ready():
         html_block(
             '<div class="hint">Photo analysis needs a Gemini API key. Open '
             "<strong>Photo analysis connection</strong> in the sidebar to set it "
@@ -880,7 +911,7 @@ with col_upload:
 
     if analyze_clicked and uploaded:
         with st.spinner("Analyzing your meal..."):
-            result = analyze_image(uploaded.getvalue())
+            result = analyze_image(uploaded.getvalue(), api_key=active_api_key())
 
         # A new meal starts clean: no old portions, totals or manual foods.
         clear_review_state()
@@ -949,11 +980,10 @@ if show_review:
     detected = []
 
     if result is not None:
-        if result.status == "error" and API_KEY_MISSING:
+        if result.status == "error" and not photo_analysis_ready():
             st.error(
-                "Photo analysis isn't set up yet because no Gemini API key was "
-                "found. Add GEMINI_API_KEY to the .env file in your project "
-                "folder, then restart the app. You can still add foods yourself below."
+                "Photo analysis needs a Gemini API key. Paste yours under "
+                "Photo analysis connection in the sidebar, or add foods yourself below."
             )
         elif result.status == "error":
             st.error(result.message or "Unable to analyze this image.")

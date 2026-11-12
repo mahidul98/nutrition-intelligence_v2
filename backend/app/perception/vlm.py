@@ -44,8 +44,11 @@ def _http_options() -> types.HttpOptions:
         return types.HttpOptions(timeout=options["timeout"])
 
 
-def _get_client():
+def _get_client(api_key: str | None = None):
     global _client
+    if api_key:
+        # A visitor's own key: build a fresh client and never cache or share it.
+        return genai.Client(api_key=api_key, http_options=_http_options())
     if _client is None:
         if not GEMINI_API_KEY:
             raise RuntimeError("GEMINI_API_KEY is not set in .env")
@@ -53,7 +56,7 @@ def _get_client():
     return _client
 
 
-def explain_failure(exc: Exception) -> str:
+def explain_failure(exc: Exception, api_key: str | None = None) -> str:
     """Turn an API or network error into a short message the user can act on."""
     if isinstance(exc, RuntimeError) and "GEMINI_API_KEY" in str(exc):
         return (
@@ -65,10 +68,17 @@ def explain_failure(exc: Exception) -> str:
     detail = str(getattr(exc, "message", "") or exc)
     if GEMINI_API_KEY:
         detail = detail.replace(GEMINI_API_KEY, "***")  # never echo the key
+    if api_key:
+        detail = detail.replace(api_key, "***")
     detail = " ".join(detail.split())[:200]
     lowered = detail.lower()
 
     if code == 401 or (code in (400, 403) and "api key" in lowered):
+        if api_key:
+            return (
+                "Google rejected the API key you entered. Copy the full key from "
+                "Google AI Studio again, with no spaces or extra characters."
+            )
         return (
             "Google rejected the API key. Check GEMINI_API_KEY in .env: it should "
             "be the full key, with no spaces or extra characters."
@@ -99,15 +109,15 @@ def explain_failure(exc: Exception) -> str:
     return f"Unexpected error ({type(exc).__name__})."
 
 
-def check_connection() -> tuple[bool, str]:
+def check_connection(api_key: str | None = None) -> tuple[bool, str]:
     """Send a tiny text request so users can verify their key and model."""
     try:
-        _get_client().models.generate_content(
+        _get_client(api_key).models.generate_content(
             model=GEMINI_MODEL, contents="Reply with the single word: ok"
         )
     except Exception as exc:
         logger.warning("Gemini connection test failed: %r", exc)
-        return False, explain_failure(exc)
+        return False, explain_failure(exc, api_key)
     return True, f"Connected. Photo analysis will use {GEMINI_MODEL}."
 
 
@@ -116,8 +126,8 @@ def _vocabulary() -> str:
     return "\n".join(f"{c} | {n}" for c, n in zip(df["code"], df["name_en"]))
 
 
-def detect_foods(image_bytes: bytes, mime_type: str = "image/jpeg") -> VisionResult:
-    resp = _get_client().models.generate_content(
+def detect_foods(image_bytes: bytes, mime_type: str = "image/jpeg", api_key: str | None = None) -> VisionResult:
+    resp = _get_client(api_key).models.generate_content(
         model=GEMINI_MODEL,
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type=mime_type),

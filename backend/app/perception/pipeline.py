@@ -20,19 +20,19 @@ def _clean_grams(g: float | None) -> tuple[float, bool]:
     return min(max(float(g), 5.0), MAX_GRAMS), False
 
 
-def analyze_image(raw: bytes) -> AnalysisResult:
+def analyze_image(raw: bytes, api_key: str | None = None) -> AnalysisResult:
     try:
         prepared = prepare_image(raw)
     except Exception:
         return AnalysisResult(status="error", message="Could not read this image. Please try another photo.")
 
     try:
-        vision = detect_foods(prepared)
+        vision = detect_foods(prepared, api_key=api_key) if api_key else detect_foods(prepared)
     except Exception as exc:
         logger.exception("Vision request failed")  # full details in the terminal
         return AnalysisResult(
             status="error",
-            message=f"{explain_failure(exc)} You can add foods manually.",
+            message=f"{explain_failure(exc, api_key)} You can add foods manually.",
         )
 
     if vision.scene_type == "menu":
