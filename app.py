@@ -276,7 +276,7 @@ st.set_page_config(
 )
 
 CSS_BASE = """
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap');
 :root {
 --ink: #12352A; --muted: #4E6B5F; --line: #CFE0D6; --tint: #F1F7F3; --surface: #FFFFFF; --bg: #FFFFFF; --sidebar: #EAF3EE; --field: #FFFFFF;
 --accent: #1E5B45; --accent-text: #1E5B45; --heading: #123D2E; --soft: #8DBBA5; --fat: #8DBBA5;
@@ -285,9 +285,9 @@ CSS_BASE = """
 --pill-bg: #E4EEE8; --pill-text: #1B4A39; --pill-hi-bg: #D3EADF; --pill-hi-text: #0F4A35; --pill-mid-text: #6B4300;
 --hero-a: #1E5B45; --hero-b: #123D2E; --hero-rgb: 18, 61, 46; --hero-end: .08;
 }
-.stApp, .stApp button, .stApp input, .stApp textarea { font-family: 'Public Sans', system-ui, sans-serif; }
+.stApp, .stApp button, .stApp input, .stApp textarea { font-family: 'Public Sans', 'Noto Sans Bengali', system-ui, sans-serif; }
 .stApp { background: var(--bg); }
-.stApp h1, .stApp h2, .stApp h3, .stApp h4 { font-family: 'Bricolage Grotesque', system-ui, sans-serif; letter-spacing: -0.015em; color: var(--heading); }
+.stApp h1, .stApp h2, .stApp h3, .stApp h4 { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', system-ui, sans-serif; letter-spacing: -0.015em; color: var(--heading); }
 .block-container { max-width: 1120px; padding-top: 2rem; padding-bottom: 4rem; }
 #MainMenu, footer { visibility: hidden; }
 .stApp button:focus-visible, .stApp input:focus-visible { outline: 3px solid var(--marigold); outline-offset: 2px; }
@@ -300,7 +300,7 @@ CSS_BASE = """
 .hero::before { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, rgba(var(--hero-rgb), .96) 0%, rgba(var(--hero-rgb), .86) 40%, rgba(var(--hero-rgb), .45) 72%, rgba(var(--hero-rgb), var(--hero-end)) 100%); }
 .hero::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 16px; background: radial-gradient(circle at 8px 8px, #fff 0 2px, transparent 2.6px) 0 0/16px 16px, var(--marigold); border-top: 2px solid var(--hero-b); }
 .hero-text { position: relative; z-index: 1; }
-.hero h1 { font-family: 'Bricolage Grotesque', sans-serif; font-size: clamp(30px, 4vw, 46px); font-weight: 700; line-height: 1.05; color: #fff !important; margin: 0 0 12px 0 !important; padding: 0 !important; text-shadow: 0 2px 14px rgba(0,0,0,.35); }
+.hero h1 { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-size: clamp(30px, 4vw, 46px); font-weight: 700; line-height: 1.05; color: #fff !important; margin: 0 0 12px 0 !important; padding: 0 !important; text-shadow: 0 2px 14px rgba(0,0,0,.35); }
 .hero p { color: rgba(255,255,255,.92) !important; font-size: 1.08rem; max-width: 520px; margin: 0; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
 .note { background: var(--marigold-tint); border-left: 5px solid var(--marigold); border-radius: 10px; padding: 12px 16px; color: var(--ink); margin: 0 0 18px 0; }
 .hint { color: var(--muted); font-size: .92rem; margin: 2px 0 6px 0; }
@@ -317,12 +317,12 @@ CSS_BASE = """
 .pill.mid { background: var(--marigold-tint); color: var(--pill-mid-text); }
 .pill.low, .pill.flag { background: var(--marigold); color: #2B1B00; }
 .item-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 0; margin-bottom: 4px; }
-.item-name { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 1.2rem; margin-right: 12px; color: var(--heading); }
+.item-name { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 1.2rem; margin-right: 12px; color: var(--heading); }
 .empty { background: var(--tint); border: 2px dashed var(--soft); border-radius: 14px; min-height: 190px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 18px; }
 .empty .icon { font-size: 2.2rem; margin-bottom: 6px; }
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 8px 0 18px 0; }
 .kpi { background: var(--surface); border: 1px solid var(--line); border-top: 5px solid var(--c); border-radius: 14px; padding: 16px 18px; }
-.kpi .v { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 2.1rem; line-height: 1.05; color: var(--ink); }
+.kpi .v { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 2.1rem; line-height: 1.05; color: var(--ink); }
 .kpi .u { font-size: .95rem; color: var(--muted); margin-left: 4px; font-weight: 500; }
 .kpi .l { color: var(--muted); margin-top: 8px; font-size: .95rem; }
 .kpi.main { background: var(--accent); border-color: var(--accent); border-top-color: var(--marigold); }
@@ -332,8 +332,8 @@ CSS_BASE = """
 .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 4px 0; font-size: .92rem; color: var(--ink); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 .target { background: var(--tint); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
-.t-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
-.t-head strong { font-family: 'Bricolage Grotesque', sans-serif; font-size: 1.15rem; color: var(--heading); }
+.t-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; }
+.t-head strong { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-size: 1.15rem; color: var(--heading); }
 .t-head span { font-weight: 600; color: var(--accent-text); }
 .t-head span.over { color: var(--over-text); }
 .track { height: 12px; border-radius: 6px; background: var(--track); overflow: hidden; }
@@ -341,14 +341,14 @@ CSS_BASE = """
 .fill.over { background: var(--marigold); }
 .t-sub { margin-top: 10px; color: var(--ink); }
 .t-note { color: var(--muted); font-size: .9rem; margin-top: 2px; }
-.brand { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 1.25rem; margin-bottom: 14px; color: var(--heading); }
+.brand { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 1.25rem; margin-bottom: 14px; color: var(--heading); }
 .profile { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: 0 0 0 3px var(--marigold); display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 1.2rem; flex-shrink: 0; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: 0 0 0 3px var(--marigold); display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 1.2rem; flex-shrink: 0; }
 .p-name { font-weight: 600; font-size: 1.05rem; line-height: 1.2; color: var(--ink); }
 .p-goal { color: var(--muted); font-size: .9rem; }
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
 .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-.tile .v { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 1.5rem; line-height: 1.1; color: var(--heading); }
+.tile .v { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 1.5rem; line-height: 1.1; color: var(--heading); }
 .tile .l { color: var(--muted); font-size: .85rem; margin-top: 2px; }
 .ob-track { height: 6px; border-radius: 3px; background: var(--track); margin: 4px 0 6px 0; overflow: hidden; }
 .ob-fill { height: 100%; background: var(--accent); border-radius: 3px; }
@@ -1126,6 +1126,20 @@ if show_review:
 # 8. Nutrition report and daily target comparison
 # --------------------------------------------------
 
+def visible_notes(notes):
+    # Hide developer-only notes from the public interface.
+    hidden = ("development sample", "do not show")
+    return [n for n in notes if not any(h in n.lower() for h in hidden)]
+
+
+def store_text(store):
+    # " from <store>" for real stores; nothing for placeholder catalog entries.
+    store = str(store or "").strip()
+    if not store or store.upper().startswith("DEV"):
+        return ""
+    return f" from {esc(store)}"
+
+
 def md_safe(text):
     return str(text).replace("*", "\\*")
 
@@ -1160,7 +1174,7 @@ def addons_html(items):
         rows.append(
             '<div class="aline">'
             f'<div class="n">Add {item.eat_grams:,.0f} g {esc(item.name_en)}'
-            f'<div class="s">Buy {item.buy_grams:,.0f} g from {esc(item.store)}</div></div>'
+            f'<div class="s">Buy {item.buy_grams:,.0f} g{store_text(item.store)}</div></div>'
             f"<div>{helps}</div>"
             f'<div class="p">{item.cost_bdt:,.0f} BDT</div></div>'
         )
@@ -1197,10 +1211,7 @@ def render_meal_check(response):
 
     st.subheader("Add-ons to close the gaps")
     if pivot.catalog_is_sample:
-        st.warning(
-            "Stores and prices come from a sample catalog used for development. "
-            "They are not real prices."
-        )
+        st.info("Prices shown are illustrative estimates, not live market prices.")
 
     if pivot.status == "ok":
         html_block(addons_html(pivot.items))
@@ -1245,9 +1256,9 @@ def render_meal_check(response):
     elif pivot.status == "nothing_needed":
         st.success("No gaps to fill among the nutrients we track.")
     else:
-        st.info(" ".join(pivot.notes) or "No add-on suggestion could be made.")
+        st.info(" ".join(visible_notes(pivot.notes)) or "No add-on suggestion could be made.")
 
-    for note in report.notes + pivot.notes:
+    for note in visible_notes(report.notes + pivot.notes):
         st.caption(note)
 
 
