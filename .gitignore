@@ -6,3 +6,10 @@ __pycache__/
 data/samples/
 # Local user profile data
 user_profile.json
+*.bak
+tree.txt
+csvhead.txt
+outline.txt
+priceshead.txt
+part*.txt
+names_part*.txt
