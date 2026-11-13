@@ -1,0 +1,382 @@
+code|name_bn|display_name_en|review
+01_0001|যব (গোটা)|Barley (whole grain, raw)|
+01_0034|মিষ্টি বিস্কুট|Sweet biscuit|
+01_0002|বনরুটি (বান/রোল)|Bread bun or roll|
+01_0003|পাউরুটি (টোস্টের জন্য)|White bread (for toast)|
+01_0004|ভুট্টার আটা (সাদা, গোটা)|Maize flour (whole, white)|
+01_0005|ভুট্টা (হলুদ, শুকনো)|Yellow maize (dried, raw)|
+01_0006|কাউন|Foxtail millet (raw)|
+01_0007|চীনা|Proso millet (whole grain, raw)|
+01_0008|বাজরা|Pearl millet (whole grain, raw)|
+01_0035|সাদা খিচুড়ি|Plain khichuri|
+01_0036|সাদা পোলাও|Plain pulao|
+01_0009|পপকর্ন (লবণ দেওয়া)|Popcorn (salted)|
+01_0010|চিড়া|Flattened rice (chira)|
+01_0011|ভেজা চিড়া|Flattened rice (soaked in water)|
+01_0012|চাল (বিআর-২৮, সিদ্ধ, কলে ছাঁটা)|Rice BR-28 (parboiled, milled, raw)|
+01_0037|ভাত (বিআর-২৮)|Boiled rice BR-28|
+01_0013|চাল (বিআর-১১, সিদ্ধ, কলে ছাঁটা)|Rice BR-11 (parboiled, milled, raw)|
+01_0014|চাল (বিআর-১৬, সিদ্ধ, কলে ছাঁটা)|Rice BR-16 (parboiled, milled, raw)|
+01_0015|চাল (বিআর-২৬, সিদ্ধ, কলে ছাঁটা)|Rice BR-26 (parboiled, milled, raw)|
+01_0016|চাল (বিআর-৩, সিদ্ধ, কলে ছাঁটা)|Rice BR-3 (parboiled, milled, raw)|
+01_0017|চাল (ব্রি ধান-৩০, সিদ্ধ, কলে ছাঁটা)|Rice BRRI Dhan-30 (parboiled, milled, raw)|
+01_0018|চাল (ব্রি ধান-৪০, সিদ্ধ, কলে ছাঁটা)|Rice BRRI Dhan-40 (parboiled, milled, raw)|
+01_0019|চালের কুঁড়া|Rice bran (raw)|
+01_0020|চাল (সিদ্ধ, ঢেঁকিছাঁটা)|Brown rice (parboiled, home-pounded, raw)|
+01_0038|ভাত (সিদ্ধ, ঢেঁকিছাঁটা চালের)|Boiled brown rice (home-pounded)|
+01_0021|লাল চাল (সিদ্ধ, কলে ছাঁটা)|Brown rice (parboiled, milled, raw)|
+01_0039|ভাত (লাল সিদ্ধ চালের)|Boiled brown rice (parboiled, milled)|
+01_0022|খই|Popped rice (khoi)|
+01_0023|মুড়ি (লবণ দেওয়া)|Puffed rice (muri, salted)|
+01_0024|চাল (আতপ, সুগন্ধি, চিকন)|Aromatic white rice (sunned, raw)|
+01_0040|ভাত (সুগন্ধি চালের)|Boiled aromatic rice|
+01_0025|আতপ চাল (পালিশ, কলে ছাঁটা)|White rice (sunned, polished, raw)|
+01_0041|ভাত (আতপ চালের)|Boiled white rice (sunned, polished)|
+01_0042|রুটি|Ruti (flatbread)|
+01_0026|সুজি (গমের)|Semolina (wheat, raw)|
+01_0027|জোয়ার|Sorghum (raw)|
+01_0028|কাঁচা ভুট্টা (হলুদ, মোচাসহ)|Sweet corn (yellow, on the cob, raw)|
+01_0029|সেমাই (গমের, কাঁচা)|Vermicelli (wheat, raw)|
+01_0043|সেমাই (সিদ্ধ)|Boiled vermicelli|
+01_0030|আটা (লাল, গোটা গম)|Whole wheat flour (brown, raw)|
+01_0031|আটা (সাদা, প্যাকেট)|White wheat flour (packaged)|
+01_0032|ময়দা|Refined white flour (maida)|
+01_0033|গম (গোটা)|Whole wheat (raw)|
+02_0001|ছোলার ডাল (খোসা ছাড়ানো, ভাঙা)|Bengal gram dal (split, dried, raw)|
+02_0002|ছোলা (গোটা, শুকনো)|Chickpea (whole, dried, raw)|
+02_0012|ছোলা (সিদ্ধ)|Boiled chickpea (whole)|
+02_0003|মাসকলাইয়ের ডাল (খোসা ছাড়ানো)|Black gram dal (dehulled, dried, raw)|
+02_0004|মাসকলাইয়ের ডাল (ভাঙা)|Black gram dal (split, dried, raw)|
+02_0005|মুগ ডাল (ভাঙা)|Mung dal (split, dried, raw)|
+02_0013|মুগ ডাল (সিদ্ধ)|Boiled mung dal|
+02_0006|মুগকলাই (গোটা)|Mung bean (whole, dried)|
+02_0007|খেসারি ডাল (ভাঙা)|Khesari dal (split, dried, raw)|
+02_0014|খেসারি ডাল (সিদ্ধ)|Boiled khesari dal|
+02_0008|মসুর ডাল|Lentil (masur dal, dried, raw)|
+02_0015|মসুর ডাল (সিদ্ধ)|Boiled lentil (masur dal)|
+02_0009|মটর (শুকনো)|Dried pea (raw)|
+02_0016|মটর (সিদ্ধ)|Boiled dried pea|
+02_0010|অড়হর ডাল (ভাঙা)|Arhar dal (split, dried, raw)|
+02_0011|সয়াবিন (শুকনো)|Soybean (dried, raw)|
+03_0001|ডাঁটা|Amaranth stem (data, raw)|
+03_0002|শিম|Scarlet runner bean (shim, raw)|
+03_0003|শিম (বীজ ও খোসাসহ)|Bean (seeds and pods, raw)|
+03_0004|বিট|Beetroot (red, raw)|
+03_0005|বেগুন (লম্বা, কালো)|Brinjal (long, purple, raw)|
+03_0033|বেগুন (সিদ্ধ)|Boiled brinjal (long, purple)|
+03_0006|মাখন শিম|Broad bean (makhon shim, raw)|
+03_0007|বাঁধাকপি|Cabbage (raw)|
+03_0034|বাঁধাকপি (সিদ্ধ)|Boiled cabbage|
+03_0008|গাজর|Carrot (raw)|
+03_0035|গাজর (সিদ্ধ)|Boiled carrot|
+03_0009|ফুলকপি|Cauliflower (raw)|
+03_0036|ফুলকপি (সিদ্ধ)|Boiled cauliflower|
+03_0010|কাঁচা মরিচ (বীজসহ)|Green chilli (with seeds, raw)|
+03_0011|বরবটি (কচি ফল ও বীজ)|Cowpea (borboti, pods and seeds, raw)|
+03_0037|বরবটি (সিদ্ধ)|Boiled cowpea (borboti)|
+03_0012|শসা (খোসা ছাড়ানো)|Cucumber (peeled, raw)|
+03_0013|সজনে ডাঁটা|Drumstick (pods, raw)|
+03_0014|রসুন|Garlic (raw)|
+03_0015|চালকুমড়া|Ash gourd (raw)|
+03_0016|করলা|Bitter gourd (raw)|
+03_0047|করলা (সিদ্ধ)|Boiled bitter gourd|
+03_0048|করলা ভাজা|Fried bitter gourd|
+03_0017|লাউ|Bottle gourd (raw)|
+03_0018|পটল|Pointed gourd (raw)|
+03_0038|পটল (সিদ্ধ)|Boiled pointed gourd|
+03_0019|ঝিঙে|Ridge gourd (raw)|
+03_0020|চিচিঙ্গা|Snake gourd (raw)|
+03_0021|ধুন্দুল|Sponge gourd (raw)|
+03_0022|কাকরোল|Teasel gourd (raw)|
+03_0039|কাকরোল (সিদ্ধ)|Boiled teasel gourd|
+03_0023|ঢেঁড়স|Okra (raw)|
+03_0040|ঢেঁড়স (সিদ্ধ)|Boiled okra|
+03_0046|ঢেঁড়স-টমেটো ভুনা|Okra and tomato bhuna|
+03_0024|পেঁয়াজ|Onion (raw)|
+03_0025|কাঁচা পেঁপে|Unripe papaya (raw)|
+03_0041|কাঁচা পেঁপে (সিদ্ধ)|Boiled unripe papaya|
+03_0026|মটরশুঁটি|Green peas (raw)|
+03_0027|কাঁচা কলা|Green plantain (raw)|
+03_0042|কাঁচা কলা (সিদ্ধ)|Boiled green plantain|
+03_0028|মিষ্টিকুমড়া|Pumpkin (raw)|
+03_0043|মিষ্টিকুমড়া (সিদ্ধ)|Boiled pumpkin|
+03_0029|মূলা|Radish (raw)|
+03_0044|মূলা (সিদ্ধ)|Boiled radish|
+03_0030|কাঁচা টমেটো (সবুজ)|Green tomato (raw)|
+03_0031|পাকা টমেটো|Ripe red tomato (raw)|
+03_0045|পাকা টমেটো (সিদ্ধ)|Boiled ripe red tomato|
+03_0032|শালগম|Turnip (raw)|
+04_0001|বকফুল শাক|Agathi leaves (bokful, raw)|
+04_0002|মালঞ্চ শাক|Alligator weed leaves (malancha, raw)|
+04_0003|কাঁটা নটে শাক|Spiny amaranth leaves (raw)|
+04_0004|লাল শাক|Red amaranth leaves (raw)|
+04_0032|লাল শাক (সিদ্ধ)|Boiled red amaranth leaves|
+04_0005|সবুজ ডাঁটা শাক|Green amaranth leaves (raw)|
+04_0033|সবুজ ডাঁটা শাক (সিদ্ধ)|Boiled green amaranth leaves|
+04_0006|চুকাই শাক|Dock leaves (chukai, raw)|
+04_0007|বিট শাক|Beet greens (raw)|
+04_0008|বাত বাইট্টা শাক|Bengal dayflower leaves (raw)|check
+04_0009|করলা শাক|Bitter gourd leaves (raw)|
+04_0010|লাউ শাক|Bottle gourd leaves (raw)|
+04_0011|সাবরাং|Bugleweed (raw)|check
+04_0012|সিমাই আলু শাক|Cassava leaves (raw)|check
+04_0013|কালো কচু শাক|Black colocasia leaves (raw)|
+04_0014|সবুজ কচু শাক|Green colocasia leaves (raw)|
+04_0015|বরবটি পাতা|Cowpea leaves (raw)|
+04_0016|ডিমা শাক|Dima leaves (raw)|check
+04_0017|সজনে পাতা|Drumstick leaves (raw)|
+04_0018|ঢেঁকি শাক|Fern leaves (dheki shak, raw)|
+04_0019|মেথি শাক|Fenugreek leaves (raw)|
+04_0020|পুঁই শাক|Indian spinach (pui shak, raw)|
+04_0036|পুঁই শাক (সিদ্ধ)|Boiled Indian spinach (pui shak)|
+04_0021|পাট শাক|Jute leaves (raw)|
+04_0022|মিষ্টিকুমড়া শাক|Pumpkin leaves (raw)|
+04_0023|মূলা শাক|Radish leaves (raw)|
+04_0024|নটে শাক|Slender amaranth leaves (raw)|
+04_0034|নটে শাক (সিদ্ধ)|Boiled slender amaranth leaves|
+04_0025|পালং শাক|Spinach (raw)|
+04_0035|পালং শাক (সিদ্ধ)|Boiled spinach|
+04_0026|মিষ্টি আলুর শাক|Sweet potato leaves (raw)|
+04_0027|মিষ্টি আলুর শাক (এসপি৪)|Sweet potato leaves variety SP4 (dark green, raw)|
+04_0028|মিষ্টি আলুর শাক (এসপি৭)|Sweet potato leaves variety SP7 (dark green, raw)|
+04_0029|মিষ্টি আলুর শাক (এসপি৮)|Sweet potato leaves variety SP8 (light green, raw)|
+04_0030|কলমি শাক|Water spinach (kolmi, raw)|
+04_0031|হেলেঞ্চা শাক|Watercress (helencha, raw)|
+05_0001|কচুর মুখি|Taro corm (kochur mukhi, raw)|
+05_0011|কচুর মুখি (সিদ্ধ)|Boiled taro corm (kochur mukhi)|
+05_0002|দুধ কচু|Taro cormel (dudh kochu, raw)|
+05_0017|দুধ কচু (সিদ্ধ)|Boiled taro cormel (dudh kochu)|
+05_0003|ওল কচু|Elephant foot yam (ol kochu, raw)|
+05_0018|ওল কচু (সিদ্ধ)|Boiled elephant foot yam|
+05_0004|মানকচু|Giant taro (mankochu, raw)|
+05_0019|মানকচু (সিদ্ধ)|Boiled giant taro (mankochu)|
+05_0005|গোল আলু (ডায়মন্ড জাত, খোসা ছাড়ানো)|Potato Diamond variety (peeled, raw)|
+05_0012|গোল আলু (ডায়মন্ড, সিদ্ধ)|Boiled potato Diamond variety|
+05_0021|আলু ভর্তা|Mashed potato (with salt)|
+05_0006|মিষ্টি আলু (কমলা সুন্দরী, কমলা শাঁস)|Sweet potato Komola Sundori (orange flesh, raw)|
+05_0016|মিষ্টি আলু (কমলা সুন্দরী, সিদ্ধ)|Boiled sweet potato Komola Sundori|
+05_0007|মিষ্টি আলু (হালকা হলুদ শাঁস)|Sweet potato (pale yellow flesh, raw)|
+05_0013|মিষ্টি আলু (হালকা হলুদ শাঁস, সিদ্ধ)|Boiled sweet potato (pale yellow flesh)|
+05_0008|মিষ্টি আলু (লাল খোসা, খোসা ছাড়ানো)|Sweet potato (purple skin, pale yellow flesh, peeled, raw)|
+05_0015|মিষ্টি আলু (লাল খোসা, সিদ্ধ)|Boiled sweet potato (purple skin, pale yellow flesh)|
+05_0009|মিষ্টি আলু (সাদা শাঁস)|Sweet potato (white flesh, raw)|
+05_0014|মিষ্টি আলু (সাদা শাঁস, সিদ্ধ)|Boiled sweet potato (white flesh)|
+05_0010|বন আলু|Yam (bon alu, raw)|
+05_0020|বন আলু (সিদ্ধ)|Boiled yam (bon alu)|
+06_0001|সূর্যমুখীর বীজ (শুকনো)|Sunflower seeds (dried)|
+06_0002|কাজুবাদাম (হিজলি বাদাম)|Cashew nuts (raw)|
+06_0003|চিলগোজা|Chilgoza pine nuts (dried)|
+06_0004|নারকেলের দুধ|Coconut milk|
+06_0005|নারকেল (শুকনো, কোরানো)|Desiccated coconut|
+06_0006|নারকেল (পাকা শাঁস)|Coconut (mature kernel)|
+06_0007|চীনাবাদাম (কাঁচা)|Groundnut or peanut (raw)|
+06_0008|কাঁঠালের বিচি|Jackfruit seeds (raw)|
+06_0009|তিসি|Linseed or flaxseed (tishi)|
+06_0010|পদ্মবীজ (শুকনো)|Lotus seeds (dried)|
+06_0011|পদ্মবীজ (কাঁচা)|Lotus seeds (green)|
+06_0012|সরিষা|Mustard seeds (dried)|
+06_0013|পেস্তা বাদাম|Pistachio nuts (dried)|
+06_0014|মিষ্টিকুমড়ার বীজ|Pumpkin seeds (dried)|
+06_0015|তিল|Sesame seeds (whole, dried)|
+06_0016|আখরোট|Walnuts|
+07_0001|তেজপাতা|Bay leaf (dried)|
+07_0002|এলাচ|Cardamom|
+07_0003|শুকনো মরিচ|Dried red chilli|
+07_0004|দারুচিনি (গুঁড়া)|Cinnamon (ground)|
+07_0005|লবঙ্গ|Cloves (dried)|
+07_0006|ধনেপাতা|Coriander leaves (raw)|
+07_0007|ধনিয়া (শুকনো)|Coriander seed (dry)|
+07_0008|জিরা|Cumin seeds|
+07_0009|মৌরি|Fennel seeds|
+07_0010|মেথি|Fenugreek seeds|
+07_0011|আদা|Ginger root (raw)|
+07_0012|থানকুনি পাতা|Indian pennywort (thankuni leaves, raw)|
+07_0013|লেমন গ্রাস|Lemongrass (raw)|
+07_0014|লেবুর খোসা|Lemon peel (raw)|
+07_0015|জয়িত্রী (গুঁড়া)|Mace (ground)|
+07_0016|জায়ফল|Nutmeg (dried)|
+07_0017|গোলমরিচ|Black pepper|
+07_0018|পোস্তদানা|Poppy seeds|
+07_0019|পুদিনা পাতা|Spearmint leaves (fresh)|
+07_0020|হলুদ (শুকনো)|Turmeric (dried)|
+08_0001|আপেল (খোসা ছাড়ানো)|Apple (peeled, raw)|
+08_0002|আপেল (খোসাসহ)|Apple (with skin, raw)|
+08_0003|নাশপাতি|Asian pear (nashpati, raw)|
+08_0004|কলা (সাগর, পাকা)|Banana Sagar variety (ripe, raw)|
+08_0005|মাদার|Breadfruit (raw)|check
+08_0006|নোনা আতা (পাকা)|Bullock's heart (nona ata, ripe)|
+08_0007|কামরাঙা|Star fruit (carambola, raw)|
+08_0008|আতাফল|Custard apple (ata, raw)|
+08_0009|খেজুর (শুকনো, খোরমা)|Dates (dried)|
+08_0010|খেজুর (পাকা, তাজা)|Dates (fresh, raw)|
+08_0011|কদবেল (পাকা)|Elephant apple (kodbel, ripe)|
+08_0012|আমলকী|Amla (emblic, raw)|
+08_0013|ডুমুর (পাকা)|Fig (ripe)|
+08_0014|আঙুর (সবুজ)|Grapes (green, raw)|
+08_0015|পেয়ারা (কাঁচা)|Guava (green, raw)|
+08_0016|আমড়া|Hog plum (amra, raw)|
+08_0017|কাঁঠাল (পাকা)|Jackfruit (ripe)|
+08_0018|কালোজাম|Jambolan (kalo jam, raw)|
+08_0019|জামরুল|Jambos (jamrul, raw)|
+08_0020|গোলাপজাম|Java apple (golap jam, raw)|
+08_0021|বরই|Jujube (boroi, raw)|
+08_0022|লেবু (কাগজি)|Lemon Kagoji (raw)|
+08_0023|মুসাম্বি|Sweet lime (mushambi, raw)|
+08_0024|লিচু|Lychee (raw)|
+08_0025|আম (ফজলি, পাকা)|Mango Fazli (ripe)|
+08_0026|আম (ল্যাংড়া, পাকা)|Mango Langra (ripe)|
+08_0027|ফুটি (পাকা)|Futi melon (ripe, orange flesh)|
+08_0028|ডেউয়া|Monkey jack (dewa, raw)|
+08_0029|বাঙ্গি (পাকা)|Bangi muskmelon (ripe, light orange flesh)|
+08_0030|কমলার রস (চিনি ছাড়া)|Orange juice (unsweetened)|
+08_0031|কমলা|Orange (raw)|
+08_0032|মাল্টা (পাকা)|Sweet orange or malta (ripe)|
+08_0033|কচি তালের শাঁস|Palmyra palm kernel (tender, raw)|
+08_0034|পাকা তাল|Palmyra palm pulp (ripe)|
+08_0035|পেঁপে (পাকা)|Papaya (ripe, raw)|
+08_0036|বিলাতি গাব (পাকা)|Persimmon (ripe, raw)|
+08_0037|আনারস (জলডুগী, পাকা)|Pineapple Joldugi (ripe)|
+08_0038|আনারস (পাকা)|Pineapple (ripe, raw)|
+08_0039|ডালিম (পাকা, বীজসহ)|Pomegranate (ripe, with seeds)|
+08_0040|জাম্বুরা|Pomelo (raw)|
+08_0041|তেঁতুল (পাকা, মিষ্টি)|Tamarind (sweet ripe pulp)|
+08_0042|তরমুজ (পাকা, লাল)|Watermelon (ripe, red)|
+08_0043|বেল (পাকা)|Wood apple (bel, ripe)|
+09_0001|ফেসা শুঁটকি|Gangetic hairfin anchovy (fesha, dried)|
+09_0002|ফেসা মাছ|Gangetic hairfin anchovy (fesha, raw)|
+09_0003|ওলুয়া|Goldspotted anchovy (olua, raw)|check
+09_0004|ফেসা (তেলি)|Scaly hairfin anchovy (teli fesha, raw)|
+09_0005|শরপুঁটি|Olive barb (sarpunti, raw)|
+09_0006|শরপুঁটি (কাঁটা ছাড়া)|Olive barb (without bones, raw)|
+09_0007|ভাদি পুঁটি (চোখসহ)|Pool barb (puti, eyes included, raw)|
+09_0008|ভাদি পুঁটি (কাঁটা ছাড়া, চোখসহ)|Pool barb (puti, without bones, eyes included, raw)|
+09_0009|বাটা মাছ|Bata (raw)|
+09_0010|বোয়াল (কাঁটা ছাড়া)|Boal (without bones, raw)|
+09_0011|ফলি মাছ|Bronze featherback (foli, raw)|
+09_0012|কালিবাউশ (কাঁটা ছাড়া)|Calbasu (kalibaush, without bones, raw)|
+09_0013|বাচা মাছ|Bacha catfish (raw)|
+09_0014|পাবদা মাছ|Pabda catfish (raw)|
+09_0015|কাতলা মাছ|Catla (raw)|
+09_0016|চান্দা (রাঙ্গা, চোখসহ)|Indian glassy fish (chanda, eyes included, raw)|
+09_0017|দেশি কই (চোখসহ)|Climbing perch native (koi, eyes included, raw)|
+09_0018|থাই কই (কাঁটা ছাড়া, চোখসহ)|Climbing perch Thai (koi, without bones, raw)|
+09_0019|চিতল মাছ (কাঁটা ছাড়া)|Clown knifefish (chital, without bones, raw)|
+09_0020|কমন কার্প (কাঁটা ছাড়া)|Common carp (without bones, raw)|
+09_0021|পোয়া মাছ (কাঁটা ছাড়া)|Blackspotted croaker (poa, without bones, raw)|
+09_0022|টেংরা মাছ (চোখসহ)|Day's mystus (tengra, eyes included, raw)|
+09_0072|মাছের কোপ্তা|Fish ball|
+09_0023|মাছের গাদা (কাতলা, মৃগেল, রুই)|Fish dorsal cut with skin (catla, mrigal, rohu, raw)|
+09_0024|মাছের পেটি (কাতলা, মৃগেল, রুই)|Fish belly cut with skin (catla, mrigal, rohu, raw)|
+09_0025|কাচকি মাছ|Ganges river sprat (kachki, raw)|
+09_0071|কাচকি মাছ ভাজা|Fried small fish (kachki)|
+09_0026|কাজুলি মাছ|Gangetic ailia (kajuli, raw)|
+09_0027|গুলশা মাছ|Gangetic mystus (gulsha, raw)|
+09_0028|গুইজ্জা মাছ|Giant river catfish (guizza, raw)|check
+09_0029|ভেটকি শুঁটকি|Giant seaperch (bhetki, dried)|
+09_0030|ভেটকি (কাঁটা ছাড়া)|Giant seaperch (bhetki, without bones, raw)|
+09_0031|বেলে মাছ|Tank goby (bele, raw)|
+09_0032|খলিশা (কাঁটা ছাড়া, চোখসহ)|Banded gourami (khalisha, eyes included, raw)|
+09_0033|ইলিশ (কাঁটা ছাড়া)|Hilsa (ilish, without bones, raw)|
+09_0034|চাপিলা মাছ|Indian river shad (chapila, raw)|
+09_0035|লাক্ষা মাছ (কাঁটা ছাড়া)|Indian threadfin (lakkha, without bones, raw)|check
+09_0036|সুরমা মাছ (কাঁটা ছাড়া)|Indo-Pacific king mackerel (surma, without bones, raw)|
+09_0037|গনিয়া মাছ (কাঁটা ছাড়া)|Kuria labeo (gonia, without bones, raw)|
+09_0038|আইড় মাছ (কাঁটা ছাড়া)|Long-whiskered catfish (air, without bones, raw)|
+09_0039|চম্পা মাছ|Narrow-barred Spanish mackerel (champa, raw)|
+09_0040|চেলা মাছ (ফুলচেলা)|Finescale razorbelly minnow (chela, raw)|
+09_0041|চেলা মাছ শুঁটকি (ফুলচেলা)|Finescale razorbelly minnow (chela, dried)|
+09_0042|চেলা মাছ (নারকেলি)|Largescale razorbelly minnow (chela, raw)|
+09_0043|মলা মাছ (চোখসহ)|Mola carplet (mola, whole with eyes, raw)|
+09_0044|মৃগেল মাছ (চোখসহ)|Mrigal carp (eyes included, raw)|
+09_0045|পার্শে মাছ|Goldspot mullet (parshe, raw)|
+09_0046|ঝিনুক|Mussel or clam (mixed species, raw)|
+09_0047|পাঙ্গাস মাছ (কাঁটা ছাড়া)|Pangas (without bones, raw)|
+09_0048|মেনি মাছ|Mud perch (meni, raw)|
+09_0049|রূপচাঁদা (কালো)|Black pomfret (rupchanda, raw)|
+09_0050|রূপচাঁদা (চীনা সাদা)|Chinese silver pomfret (rupchanda, raw)|
+09_0051|রূপচাঁদা শুঁটকি (সাদা)|Silver pomfret (rupchanda, dried)|
+09_0052|রূপচাঁদা (সাদা, কাঁটা ছাড়া)|Silver pomfret (rupchanda, without bones, raw)|
+09_0053|চিংড়ি (বার্মা নদীর)|Birma river prawn (raw)|
+09_0054|গলদা চিংড়ি|Giant river prawn (golda, raw)|
+09_0055|বাগদা চিংড়ি|Giant tiger prawn (bagda, raw)|
+09_0056|চিংড়ি (লোমশ নদীর)|Hairy river prawn (raw)|
+09_0057|সাদা চিংড়ি (নদীর)|Indian white prawn (river, raw)|
+09_0058|নদীর চিংড়ি (বর্ষার)|Monsoon river prawn (raw)|
+09_0059|রুই মাছ (নদীর)|Rohu river (rui, raw)|
+09_0060|রুই মাছ (কাঁটা ছাড়া)|Rohu (rui, without bones, raw)|
+09_0061|হরিণা চিংড়ি|Speckled shrimp (horina chingri, raw)|
+09_0062|সিলভার কার্প (কাঁটা ছাড়া)|Silver carp (without bones, raw)|
+09_0063|কাকিলা মাছ (চোখসহ)|Silver needle fish (kakila, eyes included, raw)|
+09_0064|তাকি মাছ (কাঁটা ছাড়া)|Spotted snakehead (taki, without bones, raw)|
+09_0065|শিং মাছ (কাঁটা ছাড়া)|Stinging catfish (shing, without bones, raw)|
+09_0066|তাতকিনি মাছ|Stone roller (tatkini, raw)|check
+09_0067|শোল মাছ (কাঁটা ছাড়া)|Striped snakehead (shol, without bones, raw)|
+09_0068|তেলাপিয়া (কাঁটা ছাড়া)|Tilapia (without bones, raw)|
+09_0069|টুনা মাছ (কাঁটা ছাড়া)|Tuna (without bones, raw)|
+09_0070|মাগুর মাছ (কাঁটা ছাড়া)|Walking catfish (magur, without bones, raw)|
+10_0016|হাঁড়ি কাবাব (গরুর)|Beef handi kabab|
+10_0001|গরুর কলিজা|Beef liver (raw)|
+10_0002|গরুর মাংস (চর্বিহীন, হাড় ছাড়া)|Beef lean (boneless, raw)|
+10_0003|গরুর মাংস (১৫-২০% চর্বি, হাড় ছাড়া)|Beef with 15-20% fat (boneless, raw)|
+10_0004|গরুর কিমা (চর্বিহীন)|Beef mince (lean, raw)|
+10_0005|মহিষের মাংস|Buffalo meat (raw)|
+10_0006|মুরগির বুকের মাংস (চামড়া ছাড়া)|Chicken breast (skinless, raw)|
+10_0007|মুরগির রানের মাংস (চামড়া ছাড়া)|Chicken leg (skinless, raw)|
+10_0008|মুরগির কলিজা|Chicken liver (raw)|
+10_0009|হাঁসের মাংস|Duck meat (raw)|
+10_0010|ব্যাঙের পা|Frog legs (raw)|
+10_0011|খাসির মাংস (চর্বিহীন)|Goat meat (lean, raw)|
+10_0012|ভেড়ার মাংস (মাঝারি চর্বি)|Lamb or mutton (moderately fat, raw)|
+10_0013|ভেড়ার কলিজা|Lamb or mutton liver (raw)|
+10_0014|কবুতরের মাংস|Pigeon meat (raw)|
+10_0015|শূকরের মাংস (৫% এর কম চর্বি)|Pork (under 5% fat, raw)|
+11_0001|মুরগির ডিম (ফার্মের)|Chicken egg farm (raw)|
+11_0005|মুরগির ডিম (ফার্মের, সিদ্ধ)|Boiled chicken egg farm|
+11_0002|দেশি মুরগির ডিম|Chicken egg native (raw)|
+11_0006|দেশি মুরগির ডিম (সিদ্ধ)|Boiled chicken egg native|
+11_0003|মুরগির ডিমের কুসুম|Chicken egg yolk (raw)|
+11_0004|হাঁসের ডিম|Duck egg (whole, raw)|
+11_0007|হাঁসের ডিম (সিদ্ধ)|Boiled duck egg|
+12_0001|ঘোল (কম চর্বি)|Buttermilk (low fat)|
+12_0002|পনির (ছানার, ২৫% চর্বি)|Paneer or cottage cheese (25% fat)|
+12_0003|মিষ্টি দই (পূর্ণ ননী দুধের)|Sweet curd (whole milk)|
+12_0004|মহিষের দুধ (পূর্ণ ননী)|Buffalo milk (whole fat)|
+12_0005|গুঁড়া দুধ (গরুর, ননী তোলা)|Cow milk powder (skimmed)|
+12_0006|গুঁড়া দুধ (গরুর, ননীসহ)|Cow milk powder (whole)|
+12_0007|গরুর দুধ (ননী তোলা)|Cow milk (skimmed)|
+12_0008|গরুর দুধ (পূর্ণ ননী, পাস্তুরিত)|Cow milk (whole fat, pasteurised)|
+12_0009|কনডেন্সড মিল্ক (চিনিযুক্ত)|Sweetened condensed milk (cow, whole)|
+12_0010|ছাগলের দুধ|Goat milk|
+12_0011|শালদুধ|Colostrum (human, raw)|
+12_0012|মায়ের দুধ|Human milk (mature, raw)|
+12_0013|পায়েস|Payesh (rice pudding)|
+13_0001|মাখন (লবণযুক্ত)|Butter (salted)|
+13_0002|তুলার বীজের তেল|Cottonseed oil|
+13_0003|কড লিভার তেল|Cod liver oil|
+13_0004|ঘি (গরুর)|Cow ghee|
+13_0005|ডালডা (বনস্পতি ঘি)|Vegetable ghee (dalda)|
+13_0006|মার্জারিন|Margarine|
+13_0007|মেয়োনেজ (লবণযুক্ত)|Mayonnaise (salted)|
+13_0008|সরিষার তেল|Mustard oil|
+13_0009|পাম তেল|Palm oil|
+13_0010|চীনাবাদামের তেল|Peanut oil|
+13_0011|তিলের তেল|Sesame oil|
+13_0012|সয়াবিন তেল|Soybean oil|
+14_0001|ডাবের পানি|Coconut water|
+14_0002|কফি (দুধ ও চিনিসহ)|Coffee with milk and sugar (instant)|
+14_0003|কফি (গুঁড়া)|Coffee powder|
+14_0004|কোমল পানীয় (কার্বনেটেড)|Soft drink (carbonated)|
+14_0005|সয়া দুধ (চিনি ছাড়া)|Soy milk (unsweetened)|
+14_0006|আখের রস|Sugarcane juice|
+14_0007|দুধ চা (চিনিসহ)|Milk tea with sugar|
+14_0008|লিকার চা (চিনিসহ)|Black tea with sugar|
+14_0009|চা পাতা (গুঁড়া)|Tea leaves (powder)|
+14_0010|খাবার পানি|Drinking water|
+15_0001|বেকিং পাউডার|Baking powder|
+15_0002|পান পাতা|Betel leaves (raw)|
+15_0003|মধু|Honey|
+15_0004|আখের গুড় (শক্ত)|Jaggery sugarcane (solid)|
+15_0005|খেজুরের গুড় (শক্ত)|Jaggery date palm (solid)|
+15_0006|নলেন গুড় (তরল)|Jaggery date palm (liquid, nolen gur)|
+15_0007|লবণ|Salt|
+15_0008|চিনি (সাদা)|White sugar|
