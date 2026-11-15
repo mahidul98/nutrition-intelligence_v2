@@ -23,6 +23,16 @@ from backend.app.api_models import ReportRequest
 from backend.app.personalization.models import UserProfile
 from backend.app.personalization.targets import daily_targets
 from backend.app.service import run_report
+from ni_i18n import (
+    LANG_OPTIONS,
+    init_language,
+    install,
+    is_bn,
+    set_language,
+    show_missing,
+    tr,
+    tr_html,
+)
 
 try:
     from backend.app.config import GEMINI_API_KEY, GEMINI_MODEL
@@ -120,6 +130,47 @@ STRETCH = (
 )
 
 esc = html.escape
+
+install()
+
+
+@lru_cache(maxsize=1)
+def _food_table():
+    """code -> (clean English name, Bangla name) from the foods table."""
+    df = load_foods()
+    en_col = "display_name_en" if "display_name_en" in df.columns else "name_en"
+    bn_values = df["name_bn"].astype(str) if "name_bn" in df.columns else [""] * len(df)
+    table = {}
+    for code, en, bn in zip(df["code"].astype(str), df[en_col].astype(str), bn_values):
+        bn = "" if bn.lower() == "nan" else bn.strip()
+        table[code] = (en.strip(), bn)
+    return table
+
+
+def food_name(code, fallback=""):
+    """Clean food name in the current language (Bangla script in Bangla mode)."""
+    en, bn = _food_table().get(str(code), (str(fallback), ""))
+    return (bn if is_bn() and bn else en) or str(fallback)
+
+
+def food_option_label(code):
+    """Dropdown label showing both languages, so search works in either."""
+    en, bn = _food_table().get(str(code), (str(code), ""))
+    if not bn:
+        return en
+    return f"{bn} ({en})" if is_bn() else f"{en} ({bn})"
+
+
+def item_title(candidate, matched):
+    """Name on a review card: the Bangla name of a matched food in Bangla mode."""
+    if matched and is_bn():
+        return food_name(candidate.fct_code, str(candidate.detected_name))
+    return str(candidate.detected_name)
+
+
+def diet_conflict_text(conflict):
+    name = md_safe(food_name(conflict.fct_code, conflict.name_en))
+    return f"{tr('Diet conflict:')} {name} {tr(conflict.reason)}."
 
 
 # --------------------------------------------------
@@ -285,6 +336,32 @@ def save_theme_choice():
         save_user_profile(current)
     except OSError:
         pass  # the choice still applies for this session
+
+
+def on_language_change(widget_key):
+    """Switch the interface language and remember the choice in the saved profile."""
+    set_language("bn" if st.session_state.get(widget_key) == LANG_OPTIONS[1] else "en")
+    current = load_user_profile()
+    if current is None:
+        return
+    current["lang"] = st.session_state["lang"]
+    try:
+        save_user_profile(current)
+    except OSError:
+        pass  # the choice still applies for this session
+
+
+def language_picker(key):
+    st.radio(
+        "Language",
+        LANG_OPTIONS,
+        index=1 if is_bn() else 0,
+        horizontal=True,
+        key=key,
+        on_change=on_language_change,
+        args=(key,),
+        label_visibility="collapsed",
+    )
 
 
 # --------------------------------------------------
@@ -504,7 +581,7 @@ def table_html(headers, rows, numeric=()):
 
 
 def html_block(markup):
-    st.markdown(markup, unsafe_allow_html=True)
+    st.markdown(tr_html(markup), unsafe_allow_html=True)
 
 
 def tiles_html(targets):
@@ -558,6 +635,7 @@ def run_onboarding():
     _, middle, _ = st.columns([1, 3, 1])
 
     with middle:
+        language_picker("lang_pick_onboarding")
         html_block(
             hero_html(
                 "Welcome to Nutrition Intelligence",
@@ -696,7 +774,7 @@ def run_onboarding():
 
             if st.button("Save profile and start", type="primary"):
                 try:
-                    save_user_profile(saved)
+                    save_user_profile({**saved, "lang": st.session_state.get("lang", "en")})
                 except OSError as exc:
                     st.error(f"Could not save your profile: {exc}")
                 else:
@@ -710,6 +788,7 @@ def run_onboarding():
 
 
 raw_profile = load_user_profile()
+init_language((raw_profile or {}).get("lang", "en"))
 
 if raw_profile is None:
     inject_css(dark=False)
@@ -729,6 +808,7 @@ inject_css(dark=bool(st.session_state["dark_mode_toggle"]))
 
 with st.sidebar:
     html_block('<div class="brand">Nutrition Intelligence</div>')
+    language_picker("lang_pick_sidebar")
     st.toggle("Dark mode", key="dark_mode_toggle", on_change=save_theme_choice)
     html_block(
         '<div class="profile">'
@@ -802,6 +882,7 @@ with st.sidebar:
                     "avoid": avoid,
                     "budget_bdt": float(budget),
                     "dark_mode": profile["dark_mode"],
+                    "lang": st.session_state.get("lang", "en"),
                 }
             )
             try:
@@ -970,12 +1051,7 @@ if show_review:
         if "name_bn_roman" in foods_df.columns
         else [None] * len(food_codes)
     )
-    food_labels = {
-        code: food_label(name, bn)
-        for code, name, bn in zip(
-            food_codes, foods_df["name_en"].astype(str).tolist(), bn_names
-        )
-    }
+    food_labels = {code: food_option_label(code) for code in food_codes}
 
     detected = []
 
@@ -1019,7 +1095,7 @@ if show_review:
             )
             html_block(
                 '<div class="item-head">'
-                f'<span class="item-name">{esc(str(candidate.detected_name))}</span>'
+                f'<span class="item-name">{esc(item_title(candidate, matched))}</span>'
                 f'<span class="pill {confidence_class(candidate.confidence)}">'
                 f"AI confidence {candidate.confidence:.0%}</span>"
                 f'<span class="pill">{PROVENANCE.get(candidate.match_method, "Match")}</span>'
@@ -1027,7 +1103,7 @@ if show_review:
             )
 
             if not matched and getattr(candidate, "alternatives", None):
-                names = ", ".join(esc(a["name_en"]) for a in candidate.alternatives)
+                names = ", ".join(esc(food_name(a["code"], a["name_en"])) for a in candidate.alternatives)
                 html_block(f'<div class="hint">Closest matches: {names}</div>')
 
             col_food, col_grams, col_include = st.columns([3, 2, 1.3])
@@ -1203,7 +1279,7 @@ def addons_html(items):
         )
         rows.append(
             '<div class="aline">'
-            f'<div class="n">Add {item.eat_grams:,.0f} g {esc(item.name_en)}'
+            f'<div class="n">Add {item.eat_grams:,.0f} g {esc(food_name(item.fct_code, item.name_en))}'
             f'<div class="s">Buy {item.buy_grams:,.0f} g{store_text(item.store)}</div></div>'
             f"<div>{helps}</div>"
             f'<div class="p">{item.cost_bdt:,.0f} BDT</div></div>'
@@ -1227,7 +1303,7 @@ def render_meal_check(response):
         return
 
     for conflict in response.diet_conflicts:
-        st.warning(f"Diet conflict: {md_safe(conflict.name_en)} {conflict.reason}.")
+        st.warning(diet_conflict_text(conflict))
 
     report, pivot = response.report, response.pivot
     st.caption(
@@ -1266,7 +1342,10 @@ def render_meal_check(response):
             )
 
         with st.expander("Something unavailable at your store?"):
-            names = {item.name_en: item.fct_code for item in pivot.items}
+            names = {
+                food_name(item.fct_code, item.name_en): item.fct_code
+                for item in pivot.items
+            }
             picked = st.multiselect(
                 "Mark these as out of stock", list(names), key="oos_pick"
             )
@@ -1281,7 +1360,7 @@ def render_meal_check(response):
             if st.session_state.get("out_of_stock"):
                 st.caption(
                     "Marked out of stock: "
-                    + ", ".join(st.session_state["out_of_stock"])
+                    + ", ".join(food_name(c) for c in st.session_state["out_of_stock"])
                 )
     elif pivot.status == "nothing_needed":
         st.success("No gaps to fill among the nutrients we track.")
@@ -1435,7 +1514,7 @@ if "meal_totals" in st.session_state:
                 ["Food", "Portion (g)", "Edible portion (g)"],
                 [
                     (
-                        line.name_en,
+                        food_name(getattr(line, "fct_code", ""), line.name_en),
                         fmt_grams(line.grams_input),
                         fmt_grams(line.edible_grams),
                     )
@@ -1478,5 +1557,9 @@ for n, label in enumerate(STAGES, start=1):
         steps_html.append(f'<div class="bar{" done" if n < stage else ""}"></div>')
 
 stepper_slot.markdown(
-    f'<div class="stepper">{"".join(steps_html)}</div>', unsafe_allow_html=True
+    tr_html(f'<div class="stepper">{"".join(steps_html)}</div>'),
+    unsafe_allow_html=True,
 )
+
+if os.getenv("NI_DEV"):
+    show_missing()

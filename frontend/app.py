@@ -1,275 +1,1769 @@
-import pandas as pd
-import requests
+"""Nutrition Intelligence: estimate the nutrition of a meal from a photo."""
+
+import base64
+import html
+import io
+import json
+import os
+import sys
+from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
+
 import streamlit as st
 
-API = "http://127.0.0.1:8000"
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT))
 
-LABEL = {
-    "energy_kcal": "Energy (kcal)", "protein_g": "Protein (g)", "fat_g": "Fat (g)",
-    "carb_g": "Carbohydrate (g)", "fiber_g": "Fibre (g)", "sodium_mg": "Sodium (mg)",
-    "calcium_mg": "Calcium (mg)", "iron_mg": "Iron (mg)",
-    "vitamin_a_rae_mcg": "Vitamin A (mcg RAE)", "vitamin_c_mg": "Vitamin C (mg)",
-    "folate_mcg": "Folate (mcg)",
-}
-STATUS = {"low": "LOW", "ok": "OK", "high": "HIGH"}
-COLS = ["use", "food", "fct_code", "grams", "dish", "confidence", "check"]
-
-
-def api_get(path, **params):
-    r = requests.get(API + path, params=params, timeout=30)
-    r.raise_for_status()
-    return r.json()
-
-
-def run_report(payload):
-    try:
-        with st.spinner("Calculating..."):
-            r = requests.post(API + "/report", json=payload, timeout=60)
-            r.raise_for_status()
-            return r.json()
-    except requests.HTTPError as e:
-        st.error(f"The backend rejected the request: {e.response.text[:300]}")
-    except requests.RequestException:
-        st.error("Cannot reach the backend. Is it running on port 8000?")
-    return None
-
-
-def candidates_to_df(cands):
-    rows = []
-    for c in cands:
-        rows.append({
-            "use": bool(c["fct_code"]),
-            "food": c["matched_name"] or (c["detected_name"] + " (not in table)"),
-            "fct_code": c["fct_code"] or "",
-            "grams": float(c["grams"]),
-            "dish": c["dish"],
-            "confidence": float(c["confidence"]),
-            "check": "please confirm" if c["needs_confirmation"] else "",
-        })
-    return pd.DataFrame(rows, columns=COLS)
-
-
-st.set_page_config(page_title="Nutrition Intelligence", layout="wide")
-st.title("Nutrition Intelligence")
-st.caption("Photo to nutrition report to a local shopping list. "
-           "Educational tool, not medical advice. Adults 18+ only.")
+from backend.app.perception.pipeline import analyze_image
+from backend.app.nutrition.foods import load_foods
+from backend.app.nutrition.engine import compute_meal
+from backend.app.schemas import MealItem
+from backend.app.api_models import ReportRequest
+from backend.app.personalization.models import UserProfile
+from backend.app.personalization.targets import daily_targets
+from backend.app.service import run_report
+from ni_i18n import (
+    LANG_OPTIONS,
+    init_language,
+    install,
+    is_bn,
+    set_language,
+    show_missing,
+    tr,
+    tr_html,
+)
 
 try:
-    personas = api_get("/personas")
-except requests.RequestException:
-    st.error("Cannot reach the backend. Start it in a second terminal with: "
-             "uvicorn backend.app.main:app --port 8000")
-    st.stop()
+    from backend.app.config import GEMINI_API_KEY, GEMINI_MODEL
+except Exception:  # if config can't load, let the analyzer report the problem
+    GEMINI_API_KEY, GEMINI_MODEL = "unknown", "unknown"
 
-# ---------------- sidebar: person ----------------
-st.sidebar.header("Person")
-pkey = st.sidebar.selectbox("Profile", list(personas), format_func=lambda k: personas[k]["name"])
-base = personas[pkey]
-with st.sidebar.expander("Customize"):
-    age = st.number_input("Age (18+)", 18, 80, int(base["age"]), key=f"age_{pkey}")
-    sexes = ["male", "female"]
-    sex = st.selectbox("Sex (used by the energy formula)", sexes,
-                       index=sexes.index(base["sex"]), key=f"sex_{pkey}")
-    weight = st.number_input("Weight (kg)", 35.0, 200.0, float(base["weight_kg"]), key=f"w_{pkey}")
-    height = st.number_input("Height (cm)", 130.0, 220.0, float(base["height_cm"]), key=f"h_{pkey}")
-    activities = ["sedentary", "light", "moderate", "active"]
-    activity = st.selectbox("Activity", activities, index=activities.index(base["activity"]),
-                            key=f"act_{pkey}")
-    goals = ["maintain", "lose", "gain"]
-    goal = st.selectbox("Goal", goals, index=goals.index(base["goal"]), key=f"goal_{pkey}")
-    diets = ["omnivore", "vegetarian", "pescatarian"]
-    diet = st.selectbox("Diet", diets, index=diets.index(base["diet"]), key=f"diet_{pkey}")
-    avoid_txt = st.text_input("Foods to avoid (comma separated)",
-                              ", ".join(base.get("avoid", [])), key=f"avoid_{pkey}")
-    budget = st.number_input("Daily food budget (BDT, 0 = none)", 0.0, 5000.0,
-                             float(base.get("budget_bdt_per_day") or 0.0), step=10.0,
-                             key=f"bud_{pkey}")
-meal = st.sidebar.selectbox("Meal", ["breakfast", "lunch", "dinner", "snack"], index=1)
+try:
+    from backend.app.perception.vlm import check_connection
+except ImportError:  # older backend without the connection test
+    check_connection = None
 
-profile = {
-    "name": base["name"], "age": int(age), "sex": sex, "weight_kg": float(weight),
-    "height_cm": float(height), "activity": activity, "goal": goal, "diet": diet,
-    "avoid": [w.strip() for w in avoid_txt.split(",") if w.strip()],
-    "budget_bdt_per_day": float(budget) if budget > 0 else None,
+API_KEY_MISSING = not GEMINI_API_KEY
+
+# Public hosting: keep each visitor's profile in their own session, never in a shared file.
+PUBLIC_MODE = os.getenv("NI_PUBLIC_MODE", "").strip().lower() in ("1", "true", "yes")
+
+
+def active_api_key():
+    """The key the visitor pasted in, or None to use the server's own key."""
+    return (st.session_state.get("user_api_key") or "").strip() or None
+
+
+def photo_analysis_ready():
+    return bool(active_api_key()) or not API_KEY_MISSING
+
+PROFILE_FILE = ROOT / "user_profile.json"
+
+EQUATIONS = ["Female equation", "Male equation"]
+ACTIVITY_LEVELS = [
+    "Sedentary",
+    "Lightly active",
+    "Moderately active",
+    "Very active",
+    "Extra active",
+]
+GOALS = ["Maintain weight", "Gradual weight loss", "Gradual muscle gain"]
+DIETS = ["omnivore", "vegetarian", "pescatarian"]
+MEALS = ["breakfast", "lunch", "dinner", "snack"]
+
+# How the app's friendly choices map onto the backend's profile model.
+SEX_FOR = {"Male equation": "male", "Female equation": "female"}
+ACTIVITY_FOR = {
+    "Sedentary": "sedentary",
+    "Lightly active": "light",
+    "Moderately active": "moderate",
+    "Very active": "active",
+    "Extra active": "active",
+}
+GOAL_FOR = {
+    "Maintain weight": "maintain",
+    "Gradual weight loss": "lose",
+    "Gradual muscle gain": "gain",
 }
 
-# ---------------- step 1: photo ----------------
-st.header("1. Photo")
-col_a, col_b = st.columns(2)
-cam = col_a.camera_input("Take a photo")
-up = col_b.file_uploader("...or upload one", type=["jpg", "jpeg", "png"])
-img = cam if cam is not None else up
-if img is not None:
-    st.image(img, width=320)
+NUTRIENT_LABELS = {
+    "energy_kcal": "Energy (kcal)",
+    "protein_g": "Protein (g)",
+    "fat_g": "Fat (g)",
+    "carb_g": "Carbohydrates (g)",
+    "fiber_g": "Fiber (g)",
+    "sodium_mg": "Sodium (mg)",
+    "calcium_mg": "Calcium (mg)",
+    "iron_mg": "Iron (mg)",
+    "vitamin_a_rae_mcg": "Vitamin A (µg RAE)",
+    "vitamin_c_mg": "Vitamin C (mg)",
+    "folate_mcg": "Folate (µg)",
+}
+KIND_TEXT = {"goal": "aim near", "min": "at least", "max": "at most"}
+STATUS_TEXT = {"low": ("Low", "low"), "ok": ("On track", "high"), "high": ("High", "low")}
 
-if img is not None and st.button("Analyze photo"):
-    data = None
+DEFAULT_PROFILE = {
+    "name": "there",
+    "age": 25,
+    "height_cm": 165.0,
+    "weight_kg": 65.0,
+    "equation": EQUATIONS[0],
+    "activity": ACTIVITY_LEVELS[0],
+    "goal": GOALS[0],
+    "diet": "omnivore",
+    "avoid": [],
+    "budget_bdt": 0.0,
+    "dark_mode": False,
+}
+
+EQUATION_HELP = (
+    "Choose the equation parameter that best fits you. "
+    "This is a calculation setting, not a gender identity label."
+)
+ONBOARDING_STEPS = 9
+
+# Streamlit 1.50+ replaced use_container_width with width="stretch".
+_VERSION = tuple(int(p) for p in st.__version__.split(".")[:2] if p.isdigit())
+STRETCH = (
+    {"width": "stretch"} if _VERSION >= (1, 50) else {"use_container_width": True}
+)
+
+esc = html.escape
+
+install()
+
+
+@lru_cache(maxsize=1)
+def _food_table():
+    """code -> (clean English name, Bangla name) from the foods table."""
+    df = load_foods()
+    en_col = "display_name_en" if "display_name_en" in df.columns else "name_en"
+    bn_values = df["name_bn"].astype(str) if "name_bn" in df.columns else [""] * len(df)
+    table = {}
+    for code, en, bn in zip(df["code"].astype(str), df[en_col].astype(str), bn_values):
+        bn = "" if bn.lower() == "nan" else bn.strip()
+        table[code] = (en.strip(), bn)
+    return table
+
+
+def food_name(code, fallback=""):
+    """Clean food name in the current language (Bangla script in Bangla mode)."""
+    en, bn = _food_table().get(str(code), (str(fallback), ""))
+    return (bn if is_bn() and bn else en) or str(fallback)
+
+
+def food_option_label(code):
+    """Dropdown label showing both languages, so search works in either."""
+    en, bn = _food_table().get(str(code), (str(code), ""))
+    if not bn:
+        return en
+    return f"{bn} ({en})" if is_bn() else f"{en} ({bn})"
+
+
+def item_title(candidate, matched):
+    """Name on a review card: the Bangla name of a matched food in Bangla mode."""
+    if matched and is_bn():
+        return food_name(candidate.fct_code, str(candidate.detected_name))
+    return str(candidate.detected_name)
+
+
+def diet_conflict_text(conflict):
+    name = md_safe(food_name(conflict.fct_code, conflict.name_en))
+    return f"{tr('Diet conflict:')} {name} {tr(conflict.reason)}."
+
+
+# --------------------------------------------------
+# 1. Profile storage and daily target estimation
+# --------------------------------------------------
+
+def load_user_profile():
+    """Load the saved user profile, if one exists."""
+    if PUBLIC_MODE:
+        data = st.session_state.get("session_profile")
+        return data if isinstance(data, dict) else None
+    if not PROFILE_FILE.exists():
+        return None
+
     try:
-        with st.spinner("Identifying foods..."):
-            files = {"file": (getattr(img, "name", "photo.jpg"), img.getvalue(),
-                              getattr(img, "type", None) or "image/jpeg")}
-            r = requests.post(API + "/analyze", files=files, timeout=120)
-            r.raise_for_status()
-            data = r.json()
-    except requests.RequestException as e:
-        st.error(f"Photo analysis failed: {e}")
-    if data:
-        if data["status"] == "ok":
-            st.session_state["items"] = candidates_to_df(data["candidates"])
-            st.session_state.pop("editor", None)
-            st.session_state.pop("result", None)
-            if data["message"]:
-                st.info(data["message"])
-        else:
-            st.warning(data["message"] or "Could not analyze this photo.")
+        with PROFILE_FILE.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return None
 
-# ---------------- step 2: confirm ----------------
-st.header("2. Confirm what was found")
-items = st.session_state.get("items")
-if items is not None and not items.empty:
-    st.caption("Untick anything that is wrong and correct the grams. "
-               "Weights from a photo are estimates.")
-    edited = st.data_editor(
-        items, key="editor", hide_index=True,
-        disabled=["food", "fct_code", "dish", "confidence", "check"],
-        column_config={
-            "use": st.column_config.CheckboxColumn("Use"),
-            "grams": st.column_config.NumberColumn("Grams (edible)", min_value=1.0,
-                                                   max_value=5000.0, step=5.0),
-        },
+    return data if isinstance(data, dict) else None
+
+
+def save_user_profile(profile):
+    """Save the user profile locally as JSON."""
+    if PUBLIC_MODE:
+        st.session_state["session_profile"] = dict(profile)
+        return
+    with PROFILE_FILE.open("w", encoding="utf-8") as file:
+        json.dump(profile, file, indent=4)
+
+
+def _number(value, low, high, default):
+    try:
+        return max(low, min(high, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def normalize_profile(raw):
+    """Fill gaps and clamp values so a hand-edited file can't break the UI."""
+    profile = {**DEFAULT_PROFILE, **(raw or {})}
+    profile["name"] = str(profile["name"]).strip() or DEFAULT_PROFILE["name"]
+    profile["age"] = int(_number(profile["age"], 18, 80, 25))
+    profile["height_cm"] = _number(profile["height_cm"], 130, 220, 165.0)
+    profile["weight_kg"] = _number(profile["weight_kg"], 35, 200, 65.0)
+    profile["dark_mode"] = bool(profile.get("dark_mode"))
+    if profile["diet"] not in DIETS:
+        profile["diet"] = "omnivore"
+    avoid = profile.get("avoid") or []
+    if isinstance(avoid, str):
+        avoid = avoid.split(",")
+    profile["avoid"] = [str(w).strip() for w in avoid if str(w).strip()][:20]
+    profile["budget_bdt"] = _number(profile.get("budget_bdt"), 0, 5000, 0.0)
+
+    for key, options in (
+        ("equation", EQUATIONS),
+        ("activity", ACTIVITY_LEVELS),
+        ("goal", GOALS),
+    ):
+        if profile[key] not in options:
+            profile[key] = DEFAULT_PROFILE[key]
+
+    return profile
+
+
+def to_backend_profile(profile):
+    """Map the app's profile onto the backend's UserProfile model."""
+    return UserProfile(
+        name=profile["name"],
+        age=int(profile["age"]),
+        sex=SEX_FOR[profile["equation"]],
+        weight_kg=float(profile["weight_kg"]),
+        height_cm=float(profile["height_cm"]),
+        activity=ACTIVITY_FOR[profile["activity"]],
+        goal=GOAL_FOR[profile["goal"]],
+        diet=profile["diet"],
+        avoid=profile["avoid"],
+        budget_bdt_per_day=profile["budget_bdt"] or None,
     )
-else:
-    edited = pd.DataFrame(columns=COLS)
-    st.caption("No foods yet. Analyze a photo, or add foods manually below.")
 
-with st.expander("Add a food manually"):
-    q = st.text_input("Search the food table (English, or Bangla written in English letters)")
-    if q:
-        try:
-            hits = api_get("/foods/search", q=q, limit=8)
-        except requests.RequestException:
-            hits = []
-        options = {f"{h['name_en']} ({h['code']})": h for h in hits}
-        if options:
-            choice = st.selectbox("Match", list(options))
-            grams_new = st.number_input("Grams (edible)", 5.0, 1500.0, 100.0, step=5.0)
-            if st.button("Add to meal"):
-                h = options[choice]
-                new = pd.DataFrame([{
-                    "use": True, "food": h["name_en"], "fct_code": h["code"],
-                    "grams": float(grams_new), "dish": "", "confidence": 1.0, "check": "added by you",
-                }], columns=COLS)
-                st.session_state["items"] = pd.concat([edited, new], ignore_index=True)
-                st.session_state.pop("editor", None)
-                st.rerun()
-        else:
-            st.caption("No match found. Try another word.")
 
-use_rows = edited[(edited["use"] == True) & (edited["fct_code"].fillna("").astype(str) != "")]  # noqa: E712
-unmatched = edited[edited["fct_code"].fillna("").astype(str) == ""]
-if len(unmatched):
-    st.warning(f"{len(unmatched)} item(s) are not in the food table and will be skipped. "
-               "Use 'Add a food manually' for a close match.")
+def targets_for(profile):
+    """Daily targets from the backend, so the sidebar and the meal check agree."""
+    result = daily_targets(to_backend_profile(profile))
+    return {
+        "calories_kcal": int(result.targets["energy_kcal"].value),
+        "protein_g": int(round(result.targets["protein_g"].value)),
+        "used_calorie_floor": result.kcal_floor_applied,
+    }
 
-# ---------------- step 3: report ----------------
-st.header("3. Report")
-if st.button("Calculate report", type="primary"):
-    if use_rows.empty:
-        st.warning("Tick at least one food first.")
+
+def default_meal_index():
+    hour = datetime.now().hour
+    return 0 if hour < 11 else 1 if hour < 16 else 3 if hour < 19 else 2
+
+
+def calculate_meal(items, meal, profile, out_of_stock=()):
+    """Meal totals, plus the personalized report when it can be built."""
+    st.session_state["meal_totals"] = compute_meal(items)
+    st.session_state["meal_request"] = {
+        "items": [item.model_dump() for item in items],
+        "meal": meal,
+    }
+    try:
+        response = run_report(
+            ReportRequest(
+                items=items,
+                profile=to_backend_profile(profile),
+                meal=meal,
+                out_of_stock=list(out_of_stock),
+            )
+        )
+    except Exception:
+        st.session_state["meal_report"] = None
+        totals = st.session_state["meal_totals"]
     else:
-        payload = {
-            "items": [{"fct_code": str(r.fct_code), "grams": float(r.grams)}
-                      for r in use_rows.itertuples()],
-            "profile": profile, "meal": meal, "out_of_stock": [],
-        }
-        st.session_state["payload"] = payload
-        st.session_state["oos"] = []
-        st.session_state["result"] = run_report(payload)
+        st.session_state["meal_totals"] = response.totals
+        st.session_state["meal_report"] = response
+        totals = response.totals
 
-res = st.session_state.get("result")
-if res:
-    rep, pv = res["report"], res["pivot"]
-    lines = rep["lines"]
+    # Session-only history: avoids writing personal meal data to a shared file.
+    history = st.session_state.setdefault("meal_history", [])
+    history.append({
+        "saved_at": datetime.now().strftime("%d %b %Y, %I:%M %p"),
+        "meal": meal.capitalize(),
+        "items": [
+            {"name": food_name(item.fct_code), "grams": float(item.grams)}
+            for item in items
+        ],
+        "energy_kcal": totals.totals.get("energy_kcal"),
+        "protein_g": totals.totals.get("protein_g"),
+        "carb_g": totals.totals.get("carb_g"),
+        "fat_g": totals.totals.get("fat_g"),
+    })
+    st.session_state["meal_history"] = history[-30:]
 
-    for c in res["diet_conflicts"]:
-        st.warning(f"Diet conflict: {c['name_en']} {c['reason']}.")
 
-    energy = next((ln for ln in lines if ln["nutrient"] == "energy_kcal"), None)
-    protein = next((ln for ln in lines if ln["nutrient"] == "protein_g"), None)
-    m1, m2, m3 = st.columns(3)
-    if energy:
-        m1.metric("Energy", f"{energy['amount']} kcal", f"{int(energy['percent'])}% of meal target",
-                  delta_color="off")
-    if protein:
-        m2.metric("Protein", f"{protein['amount']} g", f"{int(protein['percent'])}% of meal target",
-                  delta_color="off")
-    m3.metric("Gaps found", len(rep["gaps"]))
+def ft_in_from_cm(height_cm):
+    total_inches = round(height_cm / 2.54)
+    return total_inches // 12, total_inches % 12
 
-    table = pd.DataFrame([{
-        "Nutrient": LABEL.get(ln["nutrient"], ln["nutrient"]),
-        "This meal": ln["amount"],
-        "Meal target": ln["meal_target"],
-        "% of target": int(ln["percent"]),
-        "Status": STATUS[ln["status"]] + (" *" if ln["partial_data"] else ""),
-    } for ln in lines])
-    st.dataframe(table, hide_index=True)
-    st.caption("* some foods have no data for this nutrient, so the total may be understated.")
 
-    # ---- shopping list ----
-    st.subheader("Shopping list to close the gaps")
-    if pv["catalog_is_sample"]:
-        st.error("These prices are development samples, not real prices.")
+REVIEW_KEY_PREFIXES = ("food_", "grams_", "include_", "mgrams_", "minc_", "mrm_")
 
-    if pv["status"] == "ok":
-        shop = pd.DataFrame([{
-            "Food": it["name_en"], "Eat (g)": it["eat_grams"], "Buy (g)": it["buy_grams"],
-            "Cost (BDT)": it["cost_bdt"],
-            "Helps with": ", ".join(LABEL.get(h, h) for h in it["helps"]),
-            "Store": it["store"],
-        } for it in pv["items"]])
-        st.dataframe(shop, hide_index=True)
-        st.metric("Estimated cost of add-ons", f"{pv['total_cost_bdt']} BDT")
 
-        target_by = {ln["nutrient"]: ln["meal_target"] for ln in lines}
-        focus = [n for n in rep["gaps"] if n in pv["after"] and target_by.get(n)]
-        if focus:
-            chart = pd.DataFrame({
-                "Before (%)": [100 * pv["before"][n] / target_by[n] for n in focus],
-                "After (%)": [100 * pv["after"][n] / target_by[n] for n in focus],
-            }, index=[LABEL.get(n, n) for n in focus])
-            st.bar_chart(chart)
-        if pv["remaining_gaps"]:
-            st.info("Still low after these add-ons: "
-                    + ", ".join(LABEL.get(n, n) for n in pv["remaining_gaps"]))
+def clear_review_state():
+    """Forget the current meal: totals, manual foods and old widget values."""
+    for key in list(st.session_state.keys()):
+        if key.startswith(REVIEW_KEY_PREFIXES):
+            del st.session_state[key]
+    for key in ("meal_totals", "meal_report", "meal_request", "out_of_stock", "manual_items", "show_manual"):
+        st.session_state.pop(key, None)
 
-        # ---- out-of-stock demo ----
-        opts = {f"{it['name_en']} ({it['fct_code']})": it["fct_code"] for it in pv["items"]}
-        pick = st.multiselect("Demo: mark these as out of stock", list(opts))
+
+def reset_profile():
+    """Delete the saved profile and send the user back to first-time setup."""
+    try:
+        if PUBLIC_MODE:
+            st.session_state.pop("session_profile", None)
+        else:
+            PROFILE_FILE.unlink(missing_ok=True)
+    except OSError as exc:
+        st.error(f"Could not delete the profile: {exc}")
+        return
+
+    clear_review_state()
+    for key in ("onboarding_step", "new_profile", "analysis_result", "analysis_filename"):
+        st.session_state.pop(key, None)
+
+    st.rerun()
+
+
+def save_theme_choice():
+    """Persist the dark-mode toggle in the saved profile."""
+    current = load_user_profile()
+    if current is None:
+        return
+    current["dark_mode"] = bool(st.session_state.get("dark_mode_toggle"))
+    try:
+        save_user_profile(current)
+    except OSError:
+        pass  # the choice still applies for this session
+
+
+def on_language_change(widget_key):
+    """Switch the interface language and remember the choice in the saved profile."""
+    set_language("bn" if st.session_state.get(widget_key) == LANG_OPTIONS[1] else "en")
+    current = load_user_profile()
+    if current is None:
+        return
+    current["lang"] = st.session_state["lang"]
+    try:
+        save_user_profile(current)
+    except OSError:
+        pass  # the choice still applies for this session
+
+
+def language_picker(key):
+    st.radio(
+        "Language",
+        LANG_OPTIONS,
+        index=1 if is_bn() else 0,
+        horizontal=True,
+        key=key,
+        on_change=on_language_change,
+        args=(key,),
+        label_visibility="collapsed",
+    )
+
+
+# --------------------------------------------------
+# 2. Page setup and styling
+# --------------------------------------------------
+
+st.set_page_config(
+    page_title="Nutrition Intelligence",
+    page_icon="🥗",
+    layout="wide",
+)
+
+CSS_BASE = """
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap');
+:root {
+--ink: #193A36; --muted: #58716C; --line: #D8E5DF; --tint: #F1F6F2; --surface: #FFFFFF; --bg: #F8FAF7; --sidebar: #EAF2ED; --field: #FFFFFF;
+--accent: #176B63; --accent-text: #176B63; --heading: #153D38; --soft: #86B8A9; --fat: #86B8A9;
+--marigold: #E9A23B; --marigold-tint: #FFF3DF; --over-text: #87520B;
+--brand-pop: #D5E68B;
+--track: #DCE8E0; --dot-bg: #E3ECE6; --dot-done: #D3EADF;
+--pill-bg: #E4EEE8; --pill-text: #1B4A39; --pill-hi-bg: #D3EADF; --pill-hi-text: #0F4A35; --pill-mid-text: #6B4300;
+--hero-a: #1E5B45; --hero-b: #123D2E; --hero-rgb: 18, 61, 46; --hero-end: .08;
+}
+.stApp, .stApp button, .stApp input, .stApp textarea { font-family: 'Public Sans', 'Noto Sans Bengali', system-ui, sans-serif; }
+.stApp { background: var(--bg); }
+.stApp h1, .stApp h2, .stApp h3, .stApp h4 { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', system-ui, sans-serif; letter-spacing: -0.015em; color: var(--heading); }
+.block-container { max-width: 1120px; padding-top: 2rem; padding-bottom: 4rem; }
+#MainMenu, footer { visibility: hidden; }
+.stApp button:focus-visible, .stApp input:focus-visible { outline: 3px solid var(--brand-pop); outline-offset: 2px; }
+.stButton > button, [data-testid="stFormSubmitButton"] > button { border-radius: 10px; font-weight: 600; padding: 0.55rem 1.3rem; }
+[data-testid="stForm"] { background: var(--surface); border: 1px solid var(--line); border-top: 5px solid var(--marigold); border-radius: 14px; padding: 1.4rem; }
+[data-testid="stFileUploaderDropzone"] { background: var(--tint); border: 2px dashed var(--accent); border-radius: 14px; }
+[data-testid="stCheckbox"] { margin-top: 1.9rem; }
+[data-testid="stSidebar"] { border-right: 1px solid var(--line); }
+.hero { position: relative; overflow: hidden; display: flex; align-items: center; min-height: 210px; background: url("HERO_PHOTO") center/cover no-repeat, rgb(var(--hero-rgb)); border-radius: 20px; padding: 40px 40px 58px 40px; margin-bottom: 18px; }
+.hero::before { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, rgba(var(--hero-rgb), .96) 0%, rgba(var(--hero-rgb), .86) 40%, rgba(var(--hero-rgb), .45) 72%, rgba(var(--hero-rgb), var(--hero-end)) 100%); }
+.hero::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 16px; background: radial-gradient(circle at 8px 8px, #fff 0 2px, transparent 2.6px) 0 0/16px 16px, var(--marigold); border-top: 2px solid var(--hero-b); }
+.hero-text { position: relative; z-index: 1; }
+.hero h1 { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-size: clamp(30px, 4vw, 46px); font-weight: 700; line-height: 1.05; color: #fff !important; margin: 0 0 12px 0 !important; padding: 0 !important; text-shadow: 0 2px 14px rgba(0,0,0,.35); }
+.hero p { color: rgba(255,255,255,.92) !important; font-size: 1.08rem; max-width: 520px; margin: 0; text-shadow: 0 1px 8px rgba(0,0,0,.35); }
+.note { background: var(--marigold-tint); border-left: 5px solid var(--marigold); border-radius: 10px; padding: 12px 16px; color: var(--ink); margin: 0 0 18px 0; }
+.hint { color: var(--muted); font-size: .92rem; margin: 2px 0 6px 0; }
+.stepper { display: flex; align-items: center; gap: 10px; margin: 6px 0 18px 0; flex-wrap: wrap; }
+.step { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--muted); }
+.step .dot { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .85rem; background: var(--dot-bg); color: var(--muted); }
+.step.current { color: var(--ink); }
+.step.current .dot { background: var(--accent); color: #fff; box-shadow: 0 0 0 3px var(--brand-pop); }
+.step.done .dot { background: var(--dot-done); color: var(--accent-text); }
+.stepper .bar { height: 3px; width: 44px; border-radius: 2px; background: var(--track); }
+.stepper .bar.done { background: var(--brand-pop); }
+.pill { display: inline-block; padding: 3px 11px; border-radius: 999px; font-size: .82rem; font-weight: 500; background: var(--pill-bg); color: var(--pill-text); margin-right: 6px; }
+.pill.high { background: var(--pill-hi-bg); color: var(--pill-hi-text); }
+.pill.mid { background: var(--marigold-tint); color: var(--pill-mid-text); }
+.pill.low, .pill.flag { background: var(--marigold); color: #2B1B00; }
+.item-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 0; margin-bottom: 4px; }
+.item-name { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 1.2rem; margin-right: 12px; color: var(--heading); }
+.empty { background: var(--tint); border: 2px dashed var(--soft); border-radius: 14px; min-height: 190px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--muted); text-align: center; padding: 18px; }
+.empty .icon { font-size: 2.2rem; margin-bottom: 6px; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 8px 0 18px 0; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-top: 5px solid var(--c); border-radius: 14px; padding: 16px 18px; }
+.kpi .v { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 2.1rem; line-height: 1.05; color: var(--ink); }
+.kpi .u { font-size: .95rem; color: var(--muted); margin-left: 4px; font-weight: 500; }
+.kpi .l { color: var(--muted); margin-top: 8px; font-size: .95rem; }
+.kpi.main { background: var(--accent); border-color: var(--accent); border-top-color: var(--brand-pop); }
+.kpi.main .v { color: #fff; }
+.kpi.main .u, .kpi.main .l { color: rgba(255,255,255,.88); }
+.split { display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: var(--track); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0 4px 0; font-size: .92rem; color: var(--ink); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+.target { background: var(--tint); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+.t-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 10px; }
+.t-head strong { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-size: 1.15rem; color: var(--heading); }
+.t-head span { font-weight: 600; color: var(--accent-text); }
+.t-head span.over { color: var(--over-text); }
+.track { height: 12px; border-radius: 6px; background: var(--track); overflow: hidden; }
+.fill { height: 100%; border-radius: 6px; background: var(--accent); }
+.fill.over { background: var(--marigold); }
+.t-sub { margin-top: 10px; color: var(--ink); }
+.t-note { color: var(--muted); font-size: .9rem; margin-top: 2px; }
+.brand { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 1.25rem; margin-bottom: 14px; color: var(--heading); }
+.profile { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: 0 0 0 3px var(--brand-pop); display: flex; align-items: center; justify-content: center; font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 1.2rem; flex-shrink: 0; }
+.p-name { font-weight: 600; font-size: 1.05rem; line-height: 1.2; color: var(--ink); }
+.p-goal { color: var(--muted); font-size: .9rem; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.tile .v { font-family: 'Bricolage Grotesque', 'Noto Sans Bengali', sans-serif; font-weight: 700; font-size: 1.5rem; line-height: 1.1; color: var(--heading); }
+.tile .l { color: var(--muted); font-size: .85rem; margin-top: 2px; }
+.ob-track { height: 6px; border-radius: 3px; background: var(--track); margin: 4px 0 6px 0; overflow: hidden; }
+.ob-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.dwrap { overflow-x: auto; margin-bottom: 8px; }
+.dtable { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.dtable th { background: var(--tint); color: var(--heading); text-align: left; font-weight: 600; padding: 10px 14px; }
+.dtable td { padding: 10px 14px; border-top: 1px solid var(--line); color: var(--ink); }
+.dtable .num { text-align: right; font-variant-numeric: tabular-nums; }
+.mbox { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 18px; margin-bottom: 8px; }
+.mline, .aline { display: grid; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.mline:first-child, .aline:first-child { border-top: 0; }
+.mline { grid-template-columns: 1.6fr 2fr .7fr .9fr; }
+.aline { grid-template-columns: 2.2fr 1.8fr .8fr; }
+.mline .n, .aline .n { font-weight: 600; color: var(--ink); }
+.mline .s, .aline .s { color: var(--muted); font-size: .86rem; font-weight: 400; }
+.mline .p, .aline .p { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }
+@media (max-width: 760px) { .mline, .aline { grid-template-columns: 1fr 1fr; } .kpis { grid-template-columns: repeat(2, 1fr); } .hero { padding: 28px 22px 52px 22px; min-height: 180px; } .hero::before { background: linear-gradient(rgba(var(--hero-rgb), .9), rgba(var(--hero-rgb), .72)); } [data-testid="stCheckbox"] { margin-top: 0; } }
+"""
+
+CSS_DARK = """
+:root {
+--ink: #E4EFEB; --muted: #A2B9B2; --line: #2A4842; --tint: #14251F; --surface: #192D27; --bg: #0C1714; --sidebar: #10211B; --field: #12221C;
+--accent: #39A18D; --accent-text: #83D5C0; --heading: #D0E9E0; --soft: #477D70;
+--marigold-tint: #332817; --over-text: #FFD08A; --brand-pop: #B8D77A;
+--track: #243A2F; --dot-bg: #243A2F; --dot-done: #1F4A39;
+--pill-bg: #1D3429; --pill-text: #BFE6D2; --pill-hi-bg: #1F4A39; --pill-hi-text: #BFE8D3; --pill-mid-text: #FFD98A;
+--hero-a: #17483A; --hero-b: #0A2119; --hero-rgb: 10, 33, 25; --hero-end: .4;
+}
+html { color-scheme: dark; }
+.stApp, [data-testid="stApp"], [data-testid="stAppViewContainer"], [data-testid="stMain"] { background: var(--bg) !important; color: var(--ink); }
+[data-testid="stHeader"], [data-testid="stToolbar"] { background: transparent !important; }
+[data-testid="stSidebar"], [data-testid="stSidebar"] > div:first-child, [data-testid="stSidebarContent"] { background: var(--sidebar) !important; }
+.stApp p, .stApp li, .stApp label, .stApp h1, .stApp h2, .stApp h3, .stApp h4 { color: var(--ink) !important; }
+.stApp h2, .stApp h3, .stApp h4 { color: var(--heading) !important; }
+.stApp .hero h1 { color: #fff !important; }
+.stApp .hero p { color: rgba(255,255,255,.92) !important; }
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *, [data-testid="stImageCaption"] { color: var(--muted) !important; }
+[data-testid="stNumberInputContainer"], [data-testid="stTextInputRootElement"], [data-testid="stSelectbox"] div:has(> input), [data-baseweb="input"], [data-baseweb="base-input"], [data-baseweb="textarea"], [data-baseweb="select"] > div { background: var(--field) !important; border-color: var(--line) !important; }
+[data-testid="stSelectbox"] button, [data-testid="stSelectbox"] svg { color: var(--ink) !important; fill: var(--ink) !important; }
+.stApp input, .stApp textarea { color: var(--ink) !important; -webkit-text-fill-color: var(--ink) !important; caret-color: var(--ink); background: transparent !important; }
+[data-baseweb="select"] div, [data-baseweb="select"] span { color: var(--ink) !important; }
+[data-baseweb="select"] svg { fill: var(--ink) !important; }
+[data-testid="stNumberInputContainer"] button { background: var(--tint) !important; color: var(--ink) !important; border-color: var(--line) !important; }
+[data-baseweb="popover"], [data-baseweb="popover"] > div, [data-baseweb="menu"], ul[role="listbox"] { background: var(--surface) !important; color: var(--ink) !important; }
+[role="option"], [data-baseweb="menu"] li { background: var(--surface) !important; color: var(--ink) !important; }
+[role="option"]:hover, [role="option"][aria-selected="true"] { background: var(--tint) !important; }
+.stApp [data-testid="stBaseButton-secondary"], .stApp [data-testid="stBaseButton-secondaryFormSubmit"] { background: var(--surface) !important; color: var(--ink) !important; border: 1px solid var(--line) !important; }
+.stApp [data-testid="stBaseButton-primary"], .stApp [data-testid="stBaseButton-primaryFormSubmit"] { background: var(--accent) !important; border: 1px solid var(--accent) !important; }
+.stApp [data-testid="stBaseButton-primary"] p, .stApp [data-testid="stBaseButton-primaryFormSubmit"] p { color: #fff !important; }
+.stApp [data-testid="stBaseButton-primary"]:disabled, .stApp [data-testid="stBaseButton-secondary"]:disabled { opacity: .45; }
+[data-testid="stExpander"], [data-testid="stExpander"] details { background: var(--surface) !important; border-color: var(--line) !important; }
+[data-testid="stExpander"] summary, [data-testid="stExpander"] summary * { color: var(--ink) !important; }
+[data-baseweb="tab-border"] { background: var(--line) !important; }
+[data-baseweb="tab-highlight"] { background: var(--marigold) !important; }
+[data-baseweb="tab"] p { color: var(--muted) !important; }
+[data-baseweb="tab"][aria-selected="true"] p { color: var(--ink) !important; }
+[data-testid="stFileUploaderDropzone"], [data-testid="stFileUploaderDropzone"] * { color: var(--muted) !important; }
+[data-testid="stFileUploaderFile"], [data-testid="stFileUploaderFile"] * { color: var(--ink) !important; }
+[data-testid="stVerticalBlock"], [data-testid="stVerticalBlockBorderWrapper"] { border-color: var(--line) !important; }
+hr { border-color: var(--line) !important; }
+[data-testid="stAlertContainer"] { background: var(--surface) !important; border: 1px solid var(--line); border-radius: 10px; }
+[data-testid="stAlert"]:has([data-testid="stAlertContentWarning"]) [data-testid="stAlertContainer"] { background: var(--marigold-tint) !important; border-left: 5px solid var(--marigold); }
+[data-testid="stAlert"]:has([data-testid="stAlertContentError"]) [data-testid="stAlertContainer"] { background: #3A1A20 !important; border-left: 5px solid #E5737D; }
+[data-testid="stAlert"] p, [data-testid="stAlert"] * { color: var(--ink) !important; }
+"""
+
+
+# A focused visual layer shared by English/Bangla and light/dark modes.
+# It intentionally styles existing components rather than changing app logic.
+CSS_POLISH = """
+:root { --radius-card: 18px; }
+.block-container { max-width: 1180px; padding-top: 1.65rem; padding-bottom: 3.5rem; }
+[data-testid="stSidebar"] { background: var(--sidebar) !important; }
+[data-testid="stSidebar"] > div:first-child { background: var(--sidebar) !important; }
+[data-testid="stSidebarContent"] { padding: 1.15rem 1rem 1.5rem 1rem; }
+.brand { font-size: 1.18rem; letter-spacing: -.02em; margin: .15rem 0 1rem; }
+.profile { padding: .85rem; border: 1px solid var(--line); background: var(--surface); border-radius: 15px; margin: .9rem 0 .7rem; }
+.avatar { width: 42px; height: 42px; }
+.tiles { gap: 8px; margin: .65rem 0 .9rem; }
+.tile { border-radius: 14px; padding: 12px; box-shadow: 0 2px 8px rgba(20,55,40,.035); }
+.tile .v { font-size: 1.42rem; }
+[data-testid="stSidebar"] [data-testid="stExpander"] { border: 1px solid var(--line) !important; border-radius: 12px !important; margin: .45rem 0; }
+[data-testid="stSidebar"] [data-testid="stExpander"] summary { padding: .65rem .8rem; }
+.hero { min-height: 188px; border-radius: 22px; padding: 34px 38px 42px; margin-bottom: 1.2rem; box-shadow: 0 10px 28px rgba(18,61,46,.10); }
+.hero::after { height: 7px; background: var(--marigold); border: 0; }
+.hero h1 { font-size: clamp(1.8rem, 3.2vw, 2.65rem); line-height: 1.15; max-width: 760px; }
+.hero p { font-size: 1.02rem; line-height: 1.65; max-width: 620px; }
+.note { border: 1px solid color-mix(in srgb, var(--marigold) 35%, transparent); border-left: 4px solid var(--marigold); border-radius: 13px; padding: 13px 16px; line-height: 1.6; margin-bottom: 1.1rem; }
+.stepper { gap: 12px; margin: .7rem 0 1.25rem; }
+.step { font-size: .94rem; }
+.step .dot { width: 30px; height: 30px; font-weight: 700; }
+[data-testid="stFileUploader"] { background: var(--tint); border: 1px dashed var(--soft); border-radius: 18px; padding: .7rem; }
+[data-testid="stFileUploaderDropzone"] { border: 0 !important; background: transparent !important; min-height: 150px; }
+[data-testid="stFileUploaderDropzone"] button { border-radius: 10px !important; }
+[data-testid="stImage"] img { border-radius: 16px; }
+[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 16px !important; }
+[data-testid="stVerticalBlockBorderWrapper"] > div { border-radius: 16px !important; }
+.stButton > button, [data-testid="stFormSubmitButton"] > button { min-height: 2.65rem; border-radius: 11px; transition: transform .15s ease, box-shadow .15s ease; }
+.stButton > button:hover, [data-testid="stFormSubmitButton"] > button:hover { transform: translateY(-1px); box-shadow: 0 5px 14px rgba(20,65,47,.12); }
+.stApp h1, .stApp h2, .stApp h3 { letter-spacing: -.025em; }
+.stApp h2 { font-size: clamp(1.25rem, 2vw, 1.55rem); margin-top: .35rem; }
+.stApp h3 { font-size: 1.12rem; }
+.kpis { gap: 12px; margin: .7rem 0 1.15rem; }
+.kpi { border: 1px solid var(--line); border-top: 3px solid var(--c); border-radius: 16px; padding: 17px; box-shadow: 0 3px 12px rgba(20,55,40,.035); }
+.kpi.main { border-top: 3px solid var(--marigold); }
+.kpi .v { font-size: clamp(1.55rem, 2.5vw, 2rem); }
+.target { border-radius: 16px; padding: 17px 18px; box-shadow: 0 3px 12px rgba(20,55,40,.035); }
+.track { height: 10px; border-radius: 99px; }
+.fill { border-radius: 99px; }
+.mbox, .dtable { border-radius: 15px; }
+.dtable th, .dtable td { padding: 12px 15px; }
+.pill { padding: 4px 10px; border-radius: 999px; }
+.item-name { font-size: 1.12rem; }
+[data-testid="stAlertContainer"] { border-radius: 13px !important; }
+[data-baseweb="tab-list"] { gap: 8px; }
+[data-baseweb="tab"] { border-radius: 10px 10px 0 0; }
+.stCaption, [data-testid="stCaptionContainer"] { line-height: 1.55; }
+/* Keep the visual system comfortable on narrow screens and in Bangla. */
+@media (max-width: 900px) {
+  .block-container { padding: 1.1rem 1rem 2.5rem; }
+  .hero { min-height: 170px; padding: 26px 23px 34px; }
+  .stepper { gap: 8px; }
+  .stepper .bar { width: 22px; }
+}
+@media (max-width: 640px) {
+  .hero { min-height: 155px; padding: 23px 18px 30px; border-radius: 16px; }
+  .hero h1 { font-size: 1.7rem; }
+  .hero p { font-size: .94rem; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .kpi { padding: 13px; }
+  .kpi .v { font-size: 1.45rem; }
+  .step { font-size: .82rem; gap: 5px; }
+  .step .dot { width: 26px; height: 26px; }
+  .stepper .bar { width: 12px; }
+  .mline, .aline { grid-template-columns: 1fr 1fr; }
+  [data-testid="stFileUploaderDropzone"] { min-height: 125px; }
+}
+"""
+
+
+UI_REFRESH = """
+/* Clearer, card-based nutrition workspace */
+.block-container { max-width: 1240px; padding-top: 1.25rem; }
+[data-testid="stSidebar"] { min-width: 285px; }
+.hero { min-height: 176px; padding: 30px 34px 42px; border-radius: 22px; margin-bottom: 14px; }
+.hero::after { height: 8px; background: var(--brand-pop); }
+.hero h1 { font-size: clamp(28px, 3.5vw, 40px); margin-bottom: 8px !important; }
+.hero p { font-size: 1rem; max-width: 620px; }
+.stepper { background: var(--tint); border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; margin: 0 0 22px; }
+.stepper .bar { flex: 1; width: auto; max-width: 76px; }
+[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 18px !important; border-color: var(--line) !important; background: var(--surface); }
+[data-testid="stVerticalBlockBorderWrapper"] > div { padding: 16px 18px; }
+[data-testid="stFileUploaderDropzone"] { min-height: 150px; display: flex; align-items: center; justify-content: center; background: var(--tint); border: 1.5px dashed var(--soft); }
+[data-testid="stFileUploaderDropzone"]:hover { border-color: var(--accent); background: var(--dot-done); }
+[data-testid="stImage"] img { border-radius: 14px; }
+.stButton > button, [data-testid="stFormSubmitButton"] > button { min-height: 2.65rem; border-radius: 11px; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { gap: 8px; border-bottom: 1px solid var(--line); }
+[data-testid="stTabs"] [data-baseweb="tab"] { border-radius: 10px 10px 0 0; padding: 8px 14px; }
+[data-testid="stExpander"] { border-radius: 12px; }
+[data-testid="stMetric"] { background: var(--tint); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.section-kicker { color: var(--accent-text); text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; font-weight: 700; margin: 0 0 4px; }
+.section-intro { color: var(--muted); font-size: .93rem; margin: 0 0 12px; }
+.workspace-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin: 2px 0 12px; }
+.workspace-title h3 { margin:0 !important; }
+.workspace-tag { display:inline-flex; padding:5px 10px; border-radius:999px; background:var(--pill-bg); color:var(--pill-text); font-size:.78rem; font-weight:600; }
+.note { background: var(--tint); border: 1px solid var(--line); border-left: 3px solid var(--soft); border-radius: 10px; padding: 10px 14px; color: var(--muted); font-size: .88rem; margin: 0 0 16px; }
+@media (max-width: 760px) { .block-container { padding: 1rem .85rem 3rem; } .hero { min-height: 150px; padding: 24px 20px 34px; } .stepper { gap: 7px; padding: 10px; } .step { font-size: .78rem; gap: 5px; } [data-testid="stVerticalBlockBorderWrapper"] > div { padding: 12px; } }
+"""
+
+DEFAULT_HERO_URL = (
+    "https://images.unsplash.com/photo-1547592180-85f173990554"
+    "?auto=format&fit=crop&w=1600&q=70"
+)
+HERO_FILENAMES = ("hero.jpg", "hero.jpeg", "hero.png", "hero.webp")
+
+
+@lru_cache(maxsize=4)
+def _embed_photo(path, modified):
+    """Resize a local photo and embed it, so it works offline and loads fast."""
+    from PIL import Image
+
+    image = Image.open(path).convert("RGB")
+    image.thumbnail((1600, 900))
+    buffer = io.BytesIO()
+    image.save(buffer, "JPEG", quality=80)
+    return "data:image/jpeg;base64," + base64.b64encode(buffer.getvalue()).decode()
+
+
+def hero_photo_url():
+    """Use assets/hero.jpg (or .png/.webp) if present, else the default photo."""
+    for name in HERO_FILENAMES:
+        path = ROOT / "assets" / name
+        if path.exists():
+            try:
+                return _embed_photo(str(path), path.stat().st_mtime)
+            except Exception:
+                continue  # unreadable image: fall back to the default photo
+    return DEFAULT_HERO_URL
+
+
+def inject_css(dark=False):
+    css = CSS_BASE.replace("HERO_PHOTO", hero_photo_url())
+    if dark:
+        css += CSS_DARK
+    css += CSS_POLISH + UI_REFRESH
+    st.markdown("<style>" + css + "</style>", unsafe_allow_html=True)
+
+
+def hero_html(title, text):
+    return (
+        '<div class="hero"><div class="hero-text">'
+        f"<h1>{title}</h1><p>{text}</p></div></div>"
+    )
+
+
+def table_html(headers, rows, numeric=()):
+    """A small themed HTML table (follows light/dark mode, unlike st.dataframe)."""
+    head = "".join(
+        f'<th class="{"num" if h in numeric else ""}">{esc(h)}</th>' for h in headers
+    )
+    body = "".join(
+        "<tr>"
+        + "".join(
+            f'<td class="{"num" if h in numeric else ""}">{esc(str(cell))}</td>'
+            for h, cell in zip(headers, row)
+        )
+        + "</tr>"
+        for row in rows
+    )
+    return (
+        '<div class="dwrap"><table class="dtable"><thead><tr>'
+        f"{head}</tr></thead><tbody>{body}</tbody></table></div>"
+    )
+
+
+def html_block(markup):
+    st.markdown(tr_html(markup), unsafe_allow_html=True)
+
+
+def tiles_html(targets):
+    return (
+        '<div class="tiles">'
+        f'<div class="tile"><div class="v">{targets["calories_kcal"]:,}</div>'
+        '<div class="l">kcal per day</div></div>'
+        f'<div class="tile"><div class="v">{targets["protein_g"]:,} g</div>'
+        '<div class="l">protein per day</div></div>'
+        "</div>"
+    )
+
+
+def floor_warning():
+    st.warning(
+        "The calculated calorie estimate was below the app's safety floor "
+        "(1,200 kcal for the female equation, 1,500 kcal for the male "
+        "equation), so the displayed target was raised to that floor. "
+        "This is not a personalized medical recommendation."
+    )
+
+
+def targets_disclaimer():
+    st.caption(
+        "These are approximate estimates, not measured requirements. "
+        "The activity factors and protein estimate may not suit everyone. "
+        "Do not rely on this estimator for pregnancy or breastfeeding, "
+        "medical conditions, or eating-disorder care without qualified "
+        "professional guidance."
+    )
+
+
+# --------------------------------------------------
+# 3. First-time onboarding
+# --------------------------------------------------
+
+def run_onboarding():
+    state = st.session_state
+    state.setdefault("onboarding_step", 1)
+    state.setdefault("new_profile", {})
+
+    step = state["onboarding_step"]
+    draft = state["new_profile"]
+    saved = normalize_profile(draft)
+
+    def go(key, value):
+        draft[key] = value
+        state["onboarding_step"] = step + 1
+        st.rerun()
+
+    _, middle, _ = st.columns([1, 3, 1])
+
+    with middle:
+        language_picker("lang_pick_onboarding")
+        html_block(
+            hero_html(
+                "Welcome to Nutrition Intelligence",
+                "Let's set up your profile. It takes about a minute, "
+                "and you only do it once.",
+            )
+        )
+        html_block(
+            f'<div class="ob-track"><div class="ob-fill" '
+            f'style="width:{step / ONBOARDING_STEPS:.0%}"></div></div>'
+        )
+        st.caption(f"Step {step} of {ONBOARDING_STEPS}")
+
+        if step == 1:
+            st.subheader("First, what should we call you?")
+            with st.form("name_form"):
+                name = st.text_input(
+                    "Your name",
+                    value=draft.get("name", ""),
+                    placeholder="Enter your name",
+                )
+                submitted = st.form_submit_button("Continue", type="primary")
+            if submitted:
+                if name.strip():
+                    go("name", name.strip())
+                else:
+                    st.warning("Please enter your name.")
+
+        elif step == 2:
+            st.subheader("How old are you?")
+            with st.form("age_form"):
+                age = st.number_input(
+                    "Your age", min_value=18, max_value=80,
+                    value=saved["age"] if "age" in draft else 23, step=1,
+                )
+                submitted = st.form_submit_button("Continue", type="primary")
+            if submitted:
+                go("age", int(age))
+
+        elif step == 3:
+            st.subheader("How tall are you?")
+            default_ft, default_in = ft_in_from_cm(saved["height_cm"])
+            with st.form("height_form"):
+                col_ft, col_in = st.columns(2)
+                with col_ft:
+                    height_ft = st.number_input(
+                        "Feet", min_value=4, max_value=7,
+                        value=default_ft if "height_cm" in draft else 5, step=1,
+                    )
+                with col_in:
+                    height_in = st.number_input(
+                        "Extra inches", min_value=0, max_value=11,
+                        value=default_in if "height_cm" in draft else 5, step=1,
+                    )
+                submitted = st.form_submit_button("Continue", type="primary")
+            if submitted:
+                go("height_cm", (height_ft * 12 + height_in) * 2.54)
+
+        elif step == 4:
+            st.subheader("What's your current weight?")
+            with st.form("weight_form"):
+                weight_kg = st.number_input(
+                    "Weight (kg)", min_value=35.0, max_value=200.0,
+                    value=saved["weight_kg"], step=0.5,
+                )
+                submitted = st.form_submit_button("Continue", type="primary")
+            if submitted:
+                go("weight_kg", float(weight_kg))
+
+        elif step == 5:
+            st.subheader("Choose your energy equation setting")
+            with st.form("equation_form"):
+                equation = st.selectbox(
+                    "Energy equation", EQUATIONS,
+                    index=EQUATIONS.index(saved["equation"]),
+                    help=EQUATION_HELP,
+                )
+                submitted = st.form_submit_button("Continue", type="primary")
+            if submitted:
+                go("equation", equation)
+
+        elif step == 6:
+            st.subheader("How active are you normally?")
+            with st.form("activity_form"):
+                activity = st.selectbox(
+                    "Your activity level", ACTIVITY_LEVELS,
+                    index=ACTIVITY_LEVELS.index(saved["activity"]),
+                    help="Choose the level that best describes your usual activity.",
+                )
+                submitted = st.form_submit_button("Continue", type="primary")
+            if submitted:
+                go("activity", activity)
+
+        elif step == 7:
+            st.subheader("What's your nutrition goal?")
+            with st.form("goal_form"):
+                goal = st.selectbox(
+                    "Choose your goal", GOALS, index=GOALS.index(saved["goal"])
+                )
+                submitted = st.form_submit_button("Continue", type="primary")
+            if submitted:
+                go("goal", goal)
+
+        elif step == 8:
+            st.subheader("Any food preferences?")
+            st.caption("Used to flag conflicts and suggest suitable add-ons. You can skip this.")
+            with st.form("diet_form"):
+                diet = st.selectbox(
+                    "Diet", DIETS, index=DIETS.index(saved["diet"]),
+                    format_func=str.capitalize,
+                )
+                avoid = st.text_input(
+                    "Foods to avoid (comma separated)",
+                    value=", ".join(saved["avoid"]),
+                    placeholder="for example: prawn, egg",
+                )
+                budget = st.number_input(
+                    "Daily food budget in BDT (0 = no limit)",
+                    min_value=0.0, max_value=5000.0,
+                    value=float(saved["budget_bdt"]), step=10.0,
+                )
+                submitted = st.form_submit_button("Continue", type="primary")
+            if submitted:
+                draft["diet"] = diet
+                draft["avoid"] = [w.strip() for w in avoid.split(",") if w.strip()]
+                go("budget_bdt", float(budget))
+
+        else:
+            st.subheader(f"You're all set, {saved['name']}")
+            st.write("Here are your estimated daily targets.")
+            targets = targets_for(saved)
+            html_block(tiles_html(targets))
+            if targets["used_calorie_floor"]:
+                floor_warning()
+            targets_disclaimer()
+
+            if st.button("Save profile and start", type="primary"):
+                try:
+                    save_user_profile({**saved, "lang": st.session_state.get("lang", "en")})
+                except OSError as exc:
+                    st.error(f"Could not save your profile: {exc}")
+                else:
+                    state.pop("onboarding_step", None)
+                    state.pop("new_profile", None)
+                    st.rerun()
+
+        if step > 1 and st.button("Back"):
+            state["onboarding_step"] = step - 1
+            st.rerun()
+
+
+raw_profile = load_user_profile()
+init_language((raw_profile or {}).get("lang", "en"))
+
+if raw_profile is None:
+    inject_css(dark=False)
+    run_onboarding()
+    st.stop()
+
+profile = normalize_profile(raw_profile)
+targets = targets_for(profile)
+
+st.session_state.setdefault("dark_mode_toggle", profile["dark_mode"])
+inject_css(dark=bool(st.session_state["dark_mode_toggle"]))
+
+
+# --------------------------------------------------
+# 4. Sidebar: profile summary and editing
+# --------------------------------------------------
+
+with st.sidebar:
+    html_block('<div class="brand">Nutrition Intelligence</div>')
+    st.caption("YOUR WORKSPACE")
+    active_section = st.radio(
+        "Main sections",
+        ["Dashboard", "Analyze Meal", "Food Insights", "History"],
+        key="main_section",
+        label_visibility="collapsed",
+    )
+    st.divider()
+    language_picker("lang_pick_sidebar")
+    st.toggle("Dark mode", key="dark_mode_toggle", on_change=save_theme_choice)
+    html_block(
+        '<div class="profile">'
+        f'<div class="avatar">{esc(profile["name"][:1].upper())}</div>'
+        f'<div><div class="p-name">{esc(profile["name"])}</div>'
+        f'<div class="p-goal">{esc(profile["goal"])}</div></div></div>'
+    )
+    html_block(tiles_html(targets))
+
+    if targets["used_calorie_floor"]:
+        floor_warning()
+
+    with st.expander("Edit profile"):
+        st.caption("This estimator is intended for adults aged 18 and above.")
+        default_ft, default_in = ft_in_from_cm(profile["height_cm"])
+
+        with st.form("nutrition_profile"):
+            name = st.text_input("Name", value=profile["name"])
+            age = st.number_input(
+                "Age (years)", min_value=18, max_value=80, value=profile["age"]
+            )
+            col_ft, col_in = st.columns(2)
+            with col_ft:
+                height_ft = st.number_input(
+                    "Height (feet)", min_value=4, max_value=7, value=default_ft
+                )
+            with col_in:
+                height_in = st.number_input(
+                    "Extra inches", min_value=0, max_value=11, value=default_in
+                )
+            weight_kg = st.number_input(
+                "Weight (kg)", min_value=35.0, max_value=200.0,
+                value=profile["weight_kg"], step=0.5,
+            )
+            equation = st.selectbox(
+                "Energy equation setting", EQUATIONS,
+                index=EQUATIONS.index(profile["equation"]), help=EQUATION_HELP,
+            )
+            activity = st.selectbox(
+                "Activity level", ACTIVITY_LEVELS,
+                index=ACTIVITY_LEVELS.index(profile["activity"]),
+                help="Choose the level that best describes your usual activity.",
+            )
+            goal = st.selectbox("Goal", GOALS, index=GOALS.index(profile["goal"]))
+            diet = st.selectbox(
+                "Diet", DIETS, index=DIETS.index(profile["diet"]),
+                format_func=str.capitalize,
+            )
+            avoid = st.text_input(
+                "Foods to avoid (comma separated)", value=", ".join(profile["avoid"])
+            )
+            budget = st.number_input(
+                "Daily food budget (BDT, 0 = none)", min_value=0.0, max_value=5000.0,
+                value=float(profile["budget_bdt"]), step=10.0,
+            )
+            submitted = st.form_submit_button(
+                "Save and update targets", type="primary"
+            )
+
+        if submitted:
+            updated = normalize_profile(
+                {
+                    "name": name,
+                    "age": int(age),
+                    "height_cm": (height_ft * 12 + height_in) * 2.54,
+                    "weight_kg": float(weight_kg),
+                    "equation": equation,
+                    "activity": activity,
+                    "goal": goal,
+                    "diet": diet,
+                    "avoid": avoid,
+                    "budget_bdt": float(budget),
+                    "dark_mode": profile["dark_mode"],
+                    "lang": st.session_state.get("lang", "en"),
+                }
+            )
+            try:
+                save_user_profile(updated)
+            except OSError as exc:
+                st.error(f"Could not save your profile: {exc}")
+            else:
+                st.rerun()
+
+    with st.expander("Start over"):
+        st.caption(
+            "Deletes the saved profile and takes you back to first-time setup. "
+            "Current meal results are cleared too."
+        )
+        if st.button("Delete profile and start over"):
+            reset_profile()
+
+    with st.expander("Photo analysis connection", expanded=not photo_analysis_ready()):
+        if API_KEY_MISSING:
+            st.markdown(
+                "Photo analysis needs a free Google Gemini key.\n\n"
+                "1. Open [Google AI Studio](https://aistudio.google.com/apikey) and sign in.\n"
+                "2. Select **Create API key** and copy it.\n"
+                "3. Paste it below."
+            )
+        else:
+            st.caption("Photo analysis is ready. You can also use your own key.")
+        st.text_input(
+            "Your Gemini API key",
+            type="password",
+            key="user_api_key",
+            placeholder="Paste your key here",
+        )
+        st.caption(
+            "Your key is kept only while this session is open and is never saved. "
+            "Your meal photo is sent to Google Gemini for analysis."
+        )
+        if photo_analysis_ready():
+            if check_connection is None:
+                st.caption("Update the backend files to enable the connection test.")
+            elif st.button("Test connection"):
+                with st.spinner("Contacting Gemini..."):
+                    connected, message = check_connection(active_api_key())
+                (st.success if connected else st.error)(message)
+
+    targets_disclaimer()
+
+    with st.expander("About this app"):
+        st.write("Upload a meal photo to estimate its nutritional content.")
+        st.write("Nutrition values come from the project's food-composition database.")
+        st.caption("Estimates are not medical advice.")
+
+
+# --------------------------------------------------
+# 5. Section landing views
+# --------------------------------------------------
+
+if active_section == "Dashboard":
+    html_block(hero_html(
+        f"Your nutrition dashboard, {esc(profile['name'])}",
+        "A quick view of your latest meal analysis and estimated daily targets.",
+    ))
+    totals = st.session_state.get("meal_totals")
+    if totals is None:
+        st.info("Your dashboard will fill in after your first meal analysis.")
+        if st.button("Analyze your first meal", type="primary"):
+            st.session_state["main_section"] = "Analyze Meal"
+            st.rerun()
+    else:
+        values = totals.totals
+        st.caption("LATEST ANALYZED MEAL")
+        metric_cols = st.columns(4)
+        for col, label, key, unit in zip(
+            metric_cols,
+            ["Calories", "Protein", "Carbohydrates", "Fat"],
+            ["energy_kcal", "protein_g", "carb_g", "fat_g"],
+            ["kcal", "g", "g", "g"],
+        ):
+            value = values.get(key)
+            col.metric(label, f"{value:,.0f} {unit}" if value is not None else "N/A")
+        st.subheader("Daily target snapshot")
+        st.caption("The latest meal compared with estimated daily targets; this is not a full-day food log.")
+        energy = values.get("energy_kcal")
+        protein = values.get("protein_g")
         c1, c2 = st.columns(2)
-        if c1.button("Re-plan without them") and pick:
-            payload = dict(st.session_state["payload"])
-            payload["out_of_stock"] = sorted(set(st.session_state.get("oos", []))
-                                             | {opts[p] for p in pick})
-            st.session_state["oos"] = payload["out_of_stock"]
-            st.session_state["result"] = run_report(payload)
+        c1.metric("Calories", f"{energy:,.0f} / {targets['calories_kcal']} kcal" if energy is not None else "Unavailable")
+        c2.metric("Protein", f"{protein:,.1f} / {targets['protein_g']} g" if protein is not None else "Unavailable")
+        if st.button("Open full food insights"):
+            st.session_state["main_section"] = "Food Insights"
             st.rerun()
-        if st.session_state.get("oos") and c2.button("Reset stock"):
-            payload = dict(st.session_state["payload"])
-            payload["out_of_stock"] = []
-            st.session_state["oos"] = []
-            st.session_state["result"] = run_report(payload)
+
+elif active_section == "History":
+    html_block(hero_html("Meal history", "Review meal analyses saved during this browser session."))
+    history = list(reversed(st.session_state.get("meal_history", [])))
+    if not history:
+        st.info("No meals have been analyzed in this session yet.")
+        if st.button("Analyze a meal", type="primary"):
+            st.session_state["main_section"] = "Analyze Meal"
             st.rerun()
-        if st.session_state.get("oos"):
-            st.caption("Currently out of stock: " + ", ".join(st.session_state["oos"]))
-    elif pv["status"] == "nothing_needed":
+    else:
+        st.caption("History is session-only and clears when this session ends. Up to 30 recent analyses are kept.")
+        for idx, entry in enumerate(history):
+            with st.container(border=True):
+                st.markdown(f"**{entry['meal']} · {entry['saved_at']}**")
+                cols = st.columns(4)
+                for col, label, key, unit in zip(
+                    cols, ["Calories", "Protein", "Carbs", "Fat"],
+                    ["energy_kcal", "protein_g", "carb_g", "fat_g"],
+                    ["kcal", "g", "g", "g"],
+                ):
+                    val = entry.get(key)
+                    col.metric(label, f"{val:,.1f} {unit}" if val is not None else "N/A")
+                st.caption("Foods: " + ", ".join(f"{x['name']} ({x['grams']:g} g)" for x in entry["items"]))
+        if st.button("Clear session history"):
+            st.session_state["meal_history"] = []
+            st.rerun()
+
+if active_section == "Analyze Meal":
+    html_block(hero_html(
+        "Analyze a meal",
+        "Upload a clear photo or add foods manually, then review portions before calculating.",
+    ))
+    # --------------------------------------------------
+    # 6. Meal photo upload and analysis
+    # --------------------------------------------------
+
+    html_block(
+        '<div class="workspace-title"><div><div class="section-kicker">Step 01 · Start here</div>'
+        '<h3>Build your meal</h3><div class="section-intro">Add a photo for food recognition, '
+        'or enter foods manually if you already know what is on your plate.</div></div>'
+        '<span class="workspace-tag">Photo or manual entry</span></div>'
+    )
+    with st.container(border=True):
+        col_upload, col_preview = st.columns([3, 2], gap="large")
+
+        with col_upload:
+            uploaded = st.file_uploader(
+                "Upload a meal photo",
+                type=["jpg", "jpeg", "png", "webp"],
+                label_visibility="collapsed",
+            )
+            st.caption(
+                "JPG, PNG or WebP. Photos with good light and foods that aren't "
+                "stacked work best."
+            )
+
+            col_analyze, col_manual = st.columns(2)
+            with col_analyze:
+                analyze_clicked = st.button(
+                    "Analyze meal", type="primary", disabled=not uploaded
+                )
+            with col_manual:
+                if st.button("Add a food manually"):
+                    st.session_state["show_manual"] = True
+
+            if not photo_analysis_ready():
+                html_block(
+                    '<div class="hint">Photo analysis needs a Gemini API key. Open '
+                    "<strong>Photo analysis connection</strong> in the sidebar to set it "
+                    "up, or add foods manually.</div>"
+                )
+
+            if analyze_clicked and uploaded:
+                with st.spinner("Analyzing your meal..."):
+                    result = analyze_image(uploaded.getvalue(), api_key=active_api_key())
+
+                # A new meal starts clean: no old portions, totals or manual foods.
+                clear_review_state()
+                st.session_state["analysis_result"] = result
+                st.session_state["analysis_filename"] = uploaded.name
+
+        with col_preview:
+            if uploaded:
+                st.image(uploaded.getvalue(), caption="Your meal", **STRETCH)
+            else:
+                html_block(
+                    '<div class="empty"><div class="icon">🍽️</div>'
+                    "Your photo will appear here</div>"
+                )
+
+    # --------------------------------------------------
+    # 7. Review foods: found by the AI and added by hand
+    # --------------------------------------------------
+
+    result = st.session_state.get("analysis_result")
+    manual_items = st.session_state.setdefault("manual_items", [])
+
+    PROVENANCE = {
+        "model_code": "Matched by AI",
+        "fuzzy": "Matched by name",
+        "none": "No match yet",
+    }
+
+
+    def confidence_class(confidence):
+        if confidence >= 0.8:
+            return "high"
+        return "mid" if confidence >= 0.5 else "low"
+
+
+    def food_label(name_en, name_bn):
+        name_bn = "" if name_bn is None or str(name_bn).lower() == "nan" else str(name_bn).strip()
+        return f"{name_en} ({name_bn})" if name_bn else str(name_en)
+
+
+    show_review = (
+        result is not None
+        or bool(manual_items)
+        or st.session_state.get("show_manual", False)
+    )
+
+    if show_review:
+        st.divider()
+        html_block(
+            '<div class="section-kicker">Step 02 · Verify</div>'
+            '<div class="workspace-title"><h3>Review detected foods</h3>'
+            '<span class="workspace-tag">You stay in control</span></div>'
+        )
+        st.caption("Confirm the food match and serving size. These choices directly affect the nutrition estimate.")
+
+        foods_df = load_foods().copy()
+        food_codes = foods_df["code"].astype(str).tolist()
+        bn_names = (
+            foods_df["name_bn_roman"].tolist()
+            if "name_bn_roman" in foods_df.columns
+            else [None] * len(food_codes)
+        )
+        food_labels = {code: food_option_label(code) for code in food_codes}
+
+        detected = []
+
+        if result is not None:
+            if result.status == "error" and not photo_analysis_ready():
+                st.error(
+                    "Photo analysis needs a Gemini API key. Paste yours under "
+                    "Photo analysis connection in the sidebar, or add foods yourself below."
+                )
+            elif result.status == "error":
+                st.error(result.message or "Unable to analyze this image.")
+            elif result.status != "ok":
+                st.warning(result.message or "Unable to analyze this image.")
+            elif not result.candidates:
+                st.warning(
+                    "No foods were detected. Try another photo, or add foods yourself below."
+                )
+            else:
+                if result.message:
+                    st.warning(result.message)
+                st.write(
+                    "Review each food and portion. Change the database match, "
+                    "adjust grams, or remove an item before calculating."
+                )
+                detected = result.candidates
+
+        edited_items = []
+
+        for i, candidate in enumerate(detected):
+            with st.container(border=True):
+                matched = candidate.fct_code in food_labels
+                flag = (
+                    '<span class="pill flag">Please confirm food and portion</span>'
+                    if candidate.needs_confirmation
+                    else ""
+                )
+                dish = (
+                    f'<span class="pill">Part of {esc(str(candidate.dish))}</span>'
+                    if getattr(candidate, "dish", "")
+                    else ""
+                )
+                html_block(
+                    '<div class="item-head">'
+                    f'<span class="item-name">{esc(item_title(candidate, matched))}</span>'
+                    f'<span class="pill {confidence_class(candidate.confidence)}">'
+                    f"AI confidence {candidate.confidence:.0%}</span>"
+                    f'<span class="pill">{PROVENANCE.get(candidate.match_method, "Match")}</span>'
+                    f"{dish}{flag}</div>"
+                )
+
+                if not matched and getattr(candidate, "alternatives", None):
+                    names = ", ".join(esc(food_name(a["code"], a["name_en"])) for a in candidate.alternatives)
+                    html_block(f'<div class="hint">Closest matches: {names}</div>')
+
+                col_food, col_grams, col_include = st.columns([3, 2, 1.3])
+
+                with col_food:
+                    selected_code = st.selectbox(
+                        "Food database match",
+                        options=food_codes,
+                        index=food_codes.index(candidate.fct_code) if matched else None,
+                        placeholder="Pick the closest food",
+                        format_func=lambda code: food_labels[code],
+                        key=f"food_{i}",
+                    )
+
+                with col_grams:
+                    grams = st.number_input(
+                        "Estimated edible portion (grams)",
+                        min_value=1.0,
+                        max_value=5000.0,
+                        value=max(1.0, min(5000.0, float(candidate.grams))),
+                        step=5.0,
+                        key=f"grams_{i}",
+                    )
+
+                with col_include:
+                    include = st.checkbox(
+                        "Include this item", value=True, key=f"include_{i}"
+                    )
+
+                if include and selected_code is None:
+                    st.caption("Pick a food from the database to include this item.")
+                elif include:
+                    edited_items.append(MealItem(fct_code=selected_code, grams=grams))
+
+        for item in list(manual_items):
+            item_id = item["id"]
+            with st.container(border=True):
+                html_block(
+                    '<div class="item-head">'
+                    f'<span class="item-name">{esc(food_labels[item["code"]])}</span>'
+                    '<span class="pill">Added by you</span></div>'
+                )
+                col_grams, col_include, col_remove = st.columns([3, 1.6, 1])
+
+                with col_grams:
+                    grams = st.number_input(
+                        "Portion (grams)",
+                        min_value=1.0,
+                        max_value=5000.0,
+                        value=float(item["grams"]),
+                        step=5.0,
+                        key=f"mgrams_{item_id}",
+                    )
+
+                with col_include:
+                    include = st.checkbox(
+                        "Include this item", value=True, key=f"minc_{item_id}"
+                    )
+
+                with col_remove:
+                    st.markdown('<div style="height:1.75rem"></div>', unsafe_allow_html=True)
+                    if st.button("Remove", key=f"mrm_{item_id}"):
+                        manual_items[:] = [m for m in manual_items if m["id"] != item_id]
+                        st.rerun()
+
+                if include:
+                    edited_items.append(MealItem(fct_code=item["code"], grams=grams))
+
+        with st.form("manual_add_form", clear_on_submit=True):
+            html_block(
+                '<div class="item-head"><span class="item-name">Add a food manually</span></div>'
+            )
+            st.caption(
+                "Missing something, or the photo analysis isn't available? "
+                "Search by English or Bangla name and enter the portion in grams."
+            )
+            col_food, col_grams = st.columns([3, 1.4])
+            with col_food:
+                new_code = st.selectbox(
+                    "Food",
+                    options=food_codes,
+                    index=None,
+                    placeholder="Search foods, for example rice or dal",
+                    format_func=lambda code: food_labels[code],
+                    key="manual_food",
+                )
+            with col_grams:
+                new_grams = st.number_input(
+                    "Portion (grams)",
+                    min_value=1.0,
+                    max_value=5000.0,
+                    value=100.0,
+                    step=5.0,
+                    key="manual_grams",
+                )
+            added = st.form_submit_button("Add food", type="primary")
+
+        if added:
+            if new_code is None:
+                st.warning("Choose a food to add.")
+            else:
+                seq = st.session_state.get("manual_seq", 0) + 1
+                st.session_state["manual_seq"] = seq
+                manual_items.append(
+                    {"id": seq, "code": new_code, "grams": float(new_grams)}
+                )
+                st.rerun()
+
+        if detected or manual_items:
+            st.radio(
+                "Which meal is this?", MEALS, index=default_meal_index(),
+                horizontal=True, format_func=str.capitalize, key="meal_type",
+            )
+            if st.button("Calculate nutrition", type="primary"):
+                if not edited_items:
+                    st.warning("Include at least one food item.")
+                else:
+                    st.session_state.pop("out_of_stock", None)
+                    try:
+                        calculate_meal(edited_items, st.session_state["meal_type"], profile)
+                    except Exception as exc:
+                        st.error(f"Could not calculate nutrition: {exc}")
+
+
+
+# --------------------------------------------------
+# 8. Nutrition report and daily target comparison
+# --------------------------------------------------
+
+def visible_notes(notes):
+    # Hide developer-only notes from the public interface.
+    hidden = ("development sample", "do not show")
+    return [n for n in notes if not any(h in n.lower() for h in hidden)]
+
+
+def store_text(store):
+    # " from <store>" for real stores; nothing for placeholder catalog entries.
+    store = str(store or "").strip()
+    if not store or store.upper().startswith("DEV"):
+        return ""
+    return f" from {esc(store)}"
+
+
+def md_safe(text):
+    return str(text).replace("*", "\\*")
+
+
+def label_of(key):
+    return NUTRIENT_LABELS.get(key, key)
+
+
+def meal_check_html(lines):
+    rows = []
+    for ln in lines:
+        text, css = STATUS_TEXT[ln.status]
+        over = "" if ln.status == "ok" else " over"
+        star = " *" if ln.partial_data else ""
+        rows.append(
+            '<div class="mline">'
+            f'<div class="n">{esc(label_of(ln.nutrient))}'
+            f'<div class="s">{KIND_TEXT[ln.kind]} {ln.meal_target:,.1f} for this meal</div></div>'
+            f'<div class="track"><div class="fill{over}" style="width:{min(ln.percent, 100):.1f}%"></div></div>'
+            f'<div class="p">{ln.percent:,.0f}%{star}</div>'
+            f'<div><span class="pill {css}">{text}</span></div></div>'
+        )
+    return '<div class="mbox">' + "".join(rows) + "</div>"
+
+
+def addons_html(items):
+    rows = []
+    for item in items:
+        helps = "".join(
+            f'<span class="pill">{esc(label_of(h))}</span>' for h in item.helps
+        )
+        rows.append(
+            '<div class="aline">'
+            f'<div class="n">Add {item.eat_grams:,.0f} g {esc(food_name(item.fct_code, item.name_en))}'
+            f'<div class="s">Buy {item.buy_grams:,.0f} g{store_text(item.store)}</div></div>'
+            f"<div>{helps}</div>"
+            f'<div class="p">{item.cost_bdt:,.0f} BDT</div></div>'
+        )
+    return '<div class="mbox">' + "".join(rows) + "</div>"
+
+
+def replan(out_of_stock):
+    request = st.session_state["meal_request"]
+    items = [MealItem(**d) for d in request["items"]]
+    st.session_state["out_of_stock"] = list(out_of_stock)
+    calculate_meal(items, request["meal"], profile, out_of_stock)
+    st.session_state.pop("oos_pick", None)
+    st.rerun()
+
+
+def render_meal_check(response):
+    st.subheader("Meal check for your profile")
+    if response is None:
+        st.caption("A personalized check isn't available for this meal.")
+        return
+
+    for conflict in response.diet_conflicts:
+        st.warning(diet_conflict_text(conflict))
+
+    report, pivot = response.report, response.pivot
+    st.caption(
+        f"Your {report.meal} compared with its share of your daily targets."
+    )
+    html_block(meal_check_html(report.lines))
+    if any(ln.partial_data for ln in report.lines):
+        st.caption(
+            "* Some foods have no data for this nutrient, so the total may be understated."
+        )
+
+    st.subheader("Add-ons to close the gaps")
+    if pivot.catalog_is_sample:
+        st.info("Prices shown are illustrative estimates, not live market prices.")
+
+    if pivot.status == "ok":
+        html_block(addons_html(pivot.items))
+        target_by = {ln.nutrient: ln.meal_target for ln in report.lines}
+        focus = [n for n in report.gaps if n in pivot.after and target_by.get(n)]
+        chips = "".join(
+            f'<span class="pill high">{esc(label_of(n))} '
+            f"{100 * pivot.before.get(n, 0) / target_by[n]:.0f}% → "
+            f"{100 * pivot.after[n] / target_by[n]:.0f}%</span>"
+            for n in focus
+        )
+        html_block(
+            '<div class="tiles"><div class="tile">'
+            f'<div class="v">{pivot.total_cost_bdt:,.0f} BDT</div>'
+            '<div class="l">estimated add-on cost</div></div></div>'
+            + (f'<div class="hint">Gap coverage: {chips}</div>' if chips else "")
+        )
+        if pivot.remaining_gaps:
+            st.info(
+                "Still low after these add-ons: "
+                + ", ".join(label_of(n) for n in pivot.remaining_gaps)
+            )
+
+        with st.expander("Something unavailable at your store?"):
+            names = {
+                food_name(item.fct_code, item.name_en): item.fct_code
+                for item in pivot.items
+            }
+            picked = st.multiselect(
+                "Mark these as out of stock", list(names), key="oos_pick"
+            )
+            col_find, col_reset = st.columns(2)
+            with col_find:
+                if st.button("Find alternatives") and picked:
+                    taken = set(st.session_state.get("out_of_stock", []))
+                    replan(sorted(taken | {names[p] for p in picked}))
+            with col_reset:
+                if st.session_state.get("out_of_stock") and st.button("Reset stock"):
+                    replan([])
+            if st.session_state.get("out_of_stock"):
+                st.caption(
+                    "Marked out of stock: "
+                    + ", ".join(food_name(c) for c in st.session_state["out_of_stock"])
+                )
+    elif pivot.status == "nothing_needed":
         st.success("No gaps to fill among the nutrients we track.")
     else:
-        st.info(" ".join(pv["notes"]) or "No shopping suggestion could be made.")
+        st.info(" ".join(visible_notes(pivot.notes)) or "No add-on suggestion could be made.")
 
-    for n in rep["notes"] + pv["notes"]:
-        st.caption(n)
+    for note in visible_notes(report.notes + pivot.notes):
+        st.caption(note)
 
-st.divider()
-st.caption("Nutrient values: Food Composition Table for Bangladesh (2013). "
-           "Photo analysis uses a vision model and may make mistakes. "
-           "This tool gives general educational information, not medical advice.")
+
+def target_block(title, value, target, unit, decimals):
+    """One daily-target comparison card, as HTML."""
+    if value is None or target <= 0:
+        return (
+            f'<div class="target"><div class="t-head"><strong>{title}</strong></div>'
+            f'<div class="t-sub">{title} comparison unavailable.</div></div>'
+        )
+
+    fraction = value / target
+    over = value > target
+    cls = " over" if over else ""
+    diff = abs(target - value)
+    note = (
+        f"Meal exceeds the daily estimate by {diff:,.{decimals}f} {unit}."
+        if over
+        else f"Difference from target: {diff:,.{decimals}f} {unit}"
+    )
+
+    return (
+        f'<div class="target"><div class="t-head"><strong>{title}</strong>'
+        f'<span class="{cls.strip()}">{fraction:.0%} of daily target</span></div>'
+        f'<div class="track"><div class="fill{cls}" '
+        f'style="width:{min(1.0, fraction) * 100:.1f}%"></div></div>'
+        f'<div class="t-sub">{value:,.{decimals}f} of {target:,} {unit}</div>'
+        f'<div class="t-note">{note}</div></div>'
+    )
+
+
+if active_section == "Food Insights":
+    html_block(hero_html("Food insights", "Explore nutrient details, daily target comparisons and practical add-ons."))
+    if "meal_totals" not in st.session_state:
+        st.info("Analyze a meal first to unlock its detailed food insights.")
+        if st.button("Go to Analyze Meal", type="primary"):
+            st.session_state["main_section"] = "Analyze Meal"
+            st.rerun()
+    else:
+        if "meal_totals" in st.session_state:
+            totals = st.session_state["meal_totals"]
+            values = totals.totals
+
+            st.divider()
+            html_block(
+                '<div class="section-kicker">Step 03 · Understand</div>'
+                '<div class="workspace-title"><h3>Your nutrition report</h3>'
+                '<span class="workspace-tag">Based on reviewed portions</span></div>'
+            )
+
+            summary_metrics = [
+                ("Energy", "energy_kcal", "kcal", "var(--marigold)", 0),
+                ("Protein", "protein_g", "g", "var(--accent)", 1),
+                ("Carbohydrates", "carb_g", "g", "var(--marigold)", 1),
+                ("Fat", "fat_g", "g", "var(--fat)", 1),
+            ]
+
+            cards = []
+            for label, key, unit, color, decimals in summary_metrics:
+                value = values.get(key)
+                shown = (
+                    f'{value:,.{decimals}f}<span class="u">{unit}</span>'
+                    if value is not None
+                    else '<span class="u">Unavailable</span>'
+                )
+                cards.append(
+                    f'<div class="kpi{" main" if key == "energy_kcal" else ""}" '
+                    f'style="--c:{color}"><div class="v">{shown}</div>'
+                    f'<div class="l">{label}</div></div>'
+                )
+            html_block(f'<div class="kpis">{"".join(cards)}</div>')
+
+            protein_g, carb_g, fat_g = (values.get(k) for k in ("protein_g", "carb_g", "fat_g"))
+            if None not in (protein_g, carb_g, fat_g):
+                parts = [
+                    ("Protein", 4 * protein_g, "var(--accent)"),
+                    ("Carbohydrates", 4 * carb_g, "var(--marigold)"),
+                    ("Fat", 9 * fat_g, "var(--fat)"),
+                ]
+                macro_kcal = sum(p[1] for p in parts)
+                if macro_kcal > 0:
+                    bars = "".join(
+                        f'<div style="width:{kcal / macro_kcal * 100:.1f}%;background:{color}"></div>'
+                        for _, kcal, color in parts
+                    )
+                    legend = "".join(
+                        f'<span><i style="background:{color}"></i>{name} {kcal / macro_kcal:.0%}</span>'
+                        for name, kcal, color in parts
+                    )
+                    st.markdown("**Where the calories come from**")
+                    html_block(f'<div class="split">{bars}</div><div class="legend">{legend}</div>')
+                    st.caption("Share of calories from protein, carbohydrates and fat in this meal.")
+
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            st.subheader("Your daily target comparison")
+            st.caption(
+                "This compares one meal with your estimated daily targets. "
+                "It is not a recommendation to consume the remaining amount "
+                "in one sitting."
+            )
+
+            col_cal, col_pro = st.columns(2, gap="large")
+            with col_cal:
+                html_block(
+                    target_block(
+                        "Calories", values.get("energy_kcal"),
+                        targets["calories_kcal"], "kcal", 0,
+                    )
+                )
+            with col_pro:
+                html_block(
+                    target_block(
+                        "Protein", values.get("protein_g"),
+                        targets["protein_g"], "g", 1,
+                    )
+                )
+
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+
+            render_meal_check(st.session_state.get("meal_report"))
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+
+            nutrient_labels = NUTRIENT_LABELS
+
+            tab_nutrients, tab_foods = st.tabs(["Nutrient breakdown", "Foods used"])
+
+            def fmt_grams(value):
+                return f"{value:,.0f}" if float(value).is_integer() else f"{value:,.1f}"
+
+            with tab_nutrients:
+                html_block(
+                    table_html(
+                        ["Nutrient", "Amount"],
+                        [
+                            (
+                                label,
+                                f"{values[key]:,.2f}"
+                                if values.get(key) is not None
+                                else "Unavailable",
+                            )
+                            for key, label in nutrient_labels.items()
+                        ],
+                        numeric=("Amount",),
+                    )
+                )
+
+                if totals.unknown_by_nutrient:
+                    st.warning(
+                        "Some nutrient values are missing from the database. "
+                        "Totals for those nutrients may be incomplete."
+                    )
+
+            with tab_foods:
+                html_block(
+                    table_html(
+                        ["Food", "Portion (g)", "Edible portion (g)"],
+                        [
+                            (
+                                food_name(getattr(line, "fct_code", ""), line.name_en),
+                                fmt_grams(line.grams_input),
+                                fmt_grams(line.edible_grams),
+                            )
+                            for line in totals.lines
+                        ],
+                        numeric=("Portion (g)", "Edible portion (g)"),
+                    )
+                )
+
+            st.caption(
+                "Results depend on food identification, portion size, preparation "
+                "method, and database coverage. They are estimates, not a diagnosis "
+                "or a substitute for professional dietary advice."
+            )
+
+
+
+# --------------------------------------------------
+# 9. Progress indicator (needs the final state of this run)
+# --------------------------------------------------
+
+STAGES = ["Upload photo", "Review foods", "See nutrition"]
+
+if "meal_totals" in st.session_state:
+    stage = 3
+elif st.session_state.get("analysis_result") is not None:
+    stage = 2
+else:
+    stage = 1
+
+steps_html = []
+for n, label in enumerate(STAGES, start=1):
+    state_name = "done" if n < stage else "current" if n == stage else "todo"
+    mark = "✓" if state_name == "done" else str(n)
+    current = ' aria-current="step"' if state_name == "current" else ""
+    steps_html.append(
+        f'<div class="step {state_name}"{current}><span class="dot">{mark}</span>'
+        f"<span>{label}</span></div>"
+    )
+    if n < len(STAGES):
+        steps_html.append(f'<div class="bar{" done" if n < stage else ""}"></div>')
+
+if stepper_slot is not None:
+    stepper_slot.markdown(
+        tr_html(f'<div class="stepper">{"".join(steps_html)}</div>'),
+        unsafe_allow_html=True,
+    )
+
+if os.getenv("NI_DEV"):
+    show_missing()
